@@ -22,10 +22,16 @@ export function clearLogsBuffer(): void {
 
 /**
  * Agrega una línea cruda al buffer y la emite al renderer.
- * Sanea `\r` final (CRLF de Windows) y descarta líneas vacías.
+ *
+ * - Sanea `\r` final (CRLF de Windows) y descarta líneas vacías.
+ * - Strip del prefix `[YYYY-MM-DDTHH:MM:SS.sssZ]` que el proxy antepone a
+ *   cada `log()` para evitar doble timestamp en la UI (ya agregamos uno en
+ *   `entry.timestamp`).
  */
 export function appendLogLine(rawLine: string): void {
-  const message = rawLine.replace(/\r$/, '');
+  const message = rawLine
+    .replace(/\r$/, '')
+    .replace(/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\]\s*/, '');
   if (message.length === 0) return;
 
   const entry: LogEntry = {

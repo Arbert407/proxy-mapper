@@ -1,1 +1,35 @@
-"use strict";const e=require("electron"),i={proxy:{start:()=>e.ipcRenderer.invoke("proxy:start"),stop:()=>e.ipcRenderer.invoke("proxy:stop"),onStateChange:r=>{const n=(o,p)=>r(p);return e.ipcRenderer.on("proxy:state",n),()=>{e.ipcRenderer.removeListener("proxy:state",n)}}},logs:{onAppend:r=>{const n=(o,p)=>r(p);return e.ipcRenderer.on("logs:append",n),()=>{e.ipcRenderer.removeListener("logs:append",n)}},clear:()=>e.ipcRenderer.invoke("logs:clear"),save:()=>e.ipcRenderer.invoke("logs:save"),copy:()=>e.ipcRenderer.invoke("logs:copy")},mappings:{read:()=>e.ipcRenderer.invoke("mappings:read"),write:r=>e.ipcRenderer.invoke("mappings:write",r)},app:{getVersion:()=>e.ipcRenderer.invoke("app:version")}};e.contextBridge.exposeInMainWorld("api",i);
+"use strict";
+const electron = require("electron");
+const api = {
+  proxy: {
+    start: () => electron.ipcRenderer.invoke("proxy:start"),
+    stop: () => electron.ipcRenderer.invoke("proxy:stop"),
+    onStateChange: (cb) => {
+      const listener = (_e, change) => cb(change);
+      electron.ipcRenderer.on("proxy:state", listener);
+      return () => {
+        electron.ipcRenderer.removeListener("proxy:state", listener);
+      };
+    }
+  },
+  logs: {
+    onAppend: (cb) => {
+      const listener = (_e, entry) => cb(entry);
+      electron.ipcRenderer.on("logs:append", listener);
+      return () => {
+        electron.ipcRenderer.removeListener("logs:append", listener);
+      };
+    },
+    clear: () => electron.ipcRenderer.invoke("logs:clear"),
+    save: () => electron.ipcRenderer.invoke("logs:save"),
+    copy: () => electron.ipcRenderer.invoke("logs:copy")
+  },
+  mappings: {
+    read: () => electron.ipcRenderer.invoke("mappings:read"),
+    write: (pairs) => electron.ipcRenderer.invoke("mappings:write", pairs)
+  },
+  app: {
+    getVersion: () => electron.ipcRenderer.invoke("app:version")
+  }
+};
+electron.contextBridge.exposeInMainWorld("api", api);

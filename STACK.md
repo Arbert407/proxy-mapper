@@ -153,6 +153,20 @@ proxy-mapper/
 - **Excepciones permitidas** sólo si la función tiene una única responsabilidad clara (ej: `processLine` en SSE).
 - **Helper extractions**: si un callback o bloque de JSX crece, extraer a una sub-función local.
 
+### Debug / Instrumentación
+
+**Regla principal:** los `console.log` / `logger.info` / `logger.warn` **NO se borran cuando se cierra un bug** — quedan en el código como red de seguridad para futuros debugging. Ya nos pasó que removerlos "porque ya está arreglado" reintrodujo problemas sutiles (stale bundles, races de React StrictMode + IPC).
+
+Para que no proliferen sin control:
+
+- **Máximo 3-5 logs de diagnóstico por archivo crítico** (`proxy.ts`, `state-emitter.ts`, hooks de subscription IPC). Más de eso es ruido.
+- **Cada log lleva prefijo identificador** entre corchetes para filtrarlos fácil:
+  - `[useLogsStream]`, `[pipeChildStream]`, `[emitLogAppend]`, `[bindMainWindow]`, `[send]`
+- **No loggear una vez por línea en streams de alto volumen** — `pipeChildStream` ya tiene 1 log al abrir el pipe y otro al cerrar; las líneas intermedias se loggean con sample (substring 80 chars) o se omiten.
+- **Errores siempre con `logger.error`** (van a `app.log` aunque el wrapper esté en producción).
+- **Documentar en `US.md` → "Notas Técnicas"** cuando se agrega instrumentación nueva a un archivo, con la razón del log.
+- **Si un log resulta ser inútil tras varias iteraciones**, reemplazarlo por uno más útil (no eliminarlo sin reemplazo).
+
 ---
 
 ## Documentación

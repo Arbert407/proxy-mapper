@@ -1,7 +1,11 @@
 /**
  * proxy.ts - Lifecycle del proxy heredado.
  *
- * - US-050: spawn inicial de `npm.cmd run dev`.
+ * - US-050 (desviado): spawn directo de `node index.js` (no `npm.cmd run dev`).
+ *   Ver "FIX post-Épica 5" en US.md: la cadena `cmd.exe → npm.cmd → nodemon →
+ *   node index.js` rompe la herencia de stdio en Windows, así que los logs
+ *   del proxy nunca llegan al wrapper UI. Spawnear node directo también
+ *   elimina el bug de procesos huérfanos al hacer stop.
  * - US-051: stop con SIGTERM + escalación a `taskkill /f` tras 5s.
  * - US-052: mutex en memoria (`child !== null` + flag `stopInProgress`).
  * - US-053: handlers IPC en `main/ipc.ts`.
@@ -10,7 +14,8 @@
  * - US-056: pipea stdout/stderr del child al buffer de logs + IPC.
  * - US-057: `cwd` resuelve en dev (parent) o producción (`process.resourcesPath/proxy`).
  */
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn as nativeSpawn, type ChildProcess } from 'node:child_process';
+import crossSpawn from 'cross-spawn';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -19,6 +24,17 @@ import { PROXY_SPAWN_OPTIONS } from './constants';
 import { appendLogLine } from './logs';
 import { logger } from './logger';
 import { emitProxyState } from './state-emitter';
+
+/**
+ * Wrapper sobre `child_process.spawn` que arregla el bug de Windows con
+ * archivos `.cmd`/`.bat`. `cross-spawn` se encarga de invocar `cmd.exe /c`
+ * internamente y escapar argumentos correctamente.
+ *
+ * - `nativeSpawn` se sigue usando para `taskkill` (binario nativo, sin .cmd).
+ */
+function safeSpawn(command: string, args: string[], options: Parameters<typeof crossSpawn>[2]): ChildProcess {
+  return crossSpawn(command, args, options) as ChildProcess;
+}
 
 export type StartResult =
   | { ok: true; pid: number }
@@ -53,9 +69,17 @@ function resolveAppRoot(): string {
 }
 
 function pipeChildStream(stream: NodeJS.ReadableStream | null, source: 'stdout' | 'stderr'): void {
-  if (!stream) return;
+  if (!stream) {
+    logger.warn(`pipeChildStream(${source}): stream es null`);
+    return;
+  }
+  logger.info(`pipeChildStream(${source}): pipe abierto, esperando datos`);
   const rl = createInterface({ input: stream });
-  rl.on('line', (line) => appendLogLine(line));
+  rl.on('line', (line) => {
+    logger.info(`pipeChildStream(${source}) raw: ${line.substring(0, 80)}`);
+    appendLogLine(line);
+  });
+  rl.on('close', () => logger.info(`pipeChildStream(${source}): cerrado`));
   // El readline se cierra cuando el stream cierra; no necesitamos .close() explícito.
   void source;
 }
@@ -82,7 +106,7 @@ export async function startProxy(): Promise<StartResult> {
   emitProxyState({ state: 'starting' });
 
   try {
-    const spawned = spawn('npm.cmd', ['run', 'dev'], {
+    const spawned = safeSpawn('node', ['index.js'], {
       cwd: appRoot,
       ...PROXY_SPAWN_OPTIONS,
     });
@@ -179,7 +203,7 @@ export async function stopProxy(): Promise<StopResult> {
         logger.warn(
           `stopProxy: no terminó en ${FORCE_KILL_TIMEOUT_MS}ms, escalando a taskkill /f (pid=${pid})`,
         );
-        const tk = spawn(
+        const tk = nativeSpawn(
           'taskkill',
           ['/pid', String(pid), '/t', '/f'],
           PROXY_SPAWN_OPTIONS,
