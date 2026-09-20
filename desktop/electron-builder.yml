@@ -1,0 +1,26 @@
+appId: com.anomaly.proxy-mapper-desktop
+productName: Proxy Mapper
+copyright: Copyright (c) 2026 Anomaly
+
+directories:
+  output: dist
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
