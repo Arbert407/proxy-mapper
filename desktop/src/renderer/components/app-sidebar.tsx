@@ -4,6 +4,7 @@
  * Features:
  * - 4 items (Inicio / Mappings / Logs / Acerca de) con icono Lucide + label.
  * - Colapsable a 64px (sólo iconos) / expandido a 240px.
+ * - Header con icono de marca + "Proxy Mapper" cuando está expandido.
  * - Item activo resaltado con `bg-secondary` + borde izquierdo `border-primary`.
  * - Estado disabled global: opacity 50% + pointer-events-none (proxy apagado).
  * - Footer con versiones del wrapper y del proxy (12px, muted-foreground).
@@ -11,6 +12,7 @@
 import { NavLink } from 'react-router-dom';
 import { Power, Table, FileText, Info, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import iconPng from '@/assets/icon.png';
 import { cn } from '@/lib/utils';
 import { useVersions } from '@/hooks/use-versions';
 
@@ -46,13 +48,13 @@ export const AppSidebar = ({ collapsed, onToggle, disabled }: AppSidebarProps) =
       )}
       aria-disabled={disabled}
     >
-      <div className="flex items-center p-2 border-b border-border min-h-[48px]">
+      <div className="flex items-center gap-2 p-2 border-b border-border min-h-[48px]">
         <button
           type="button"
           onClick={onToggle}
           aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
           aria-expanded={!collapsed}
-          className="p-2 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="p-2 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
         >
           {collapsed ? (
             <PanelLeftOpen className="h-4 w-4" />
@@ -61,9 +63,18 @@ export const AppSidebar = ({ collapsed, onToggle, disabled }: AppSidebarProps) =
           )}
         </button>
         {!collapsed && (
-          <span className="text-xs uppercase tracking-wide text-muted-foreground ml-2">
-            Menú
-          </span>
+          <>
+            <img
+              src={iconPng}
+              alt=""
+              width={28}
+              height={28}
+              className="rounded-md shrink-0"
+            />
+            <span className="text-sm font-medium text-foreground truncate">
+              Proxy Mapper
+            </span>
+          </>
         )}
       </div>
       <nav className="flex-1 p-2 flex flex-col gap-1" aria-label="Navegación principal">

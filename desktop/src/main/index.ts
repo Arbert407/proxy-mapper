@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import { join } from 'node:path';
 import { registerIpcHandlers } from './ipc';
 import { bindMainWindow } from './state-emitter';
@@ -10,6 +10,13 @@ import { readVersions } from './version';
 // Sin esto, Windows agrupa el icono del taskbar bajo "Electron" en vez de
 // "Proxy Mapper" y muestra el icono genérico de Electron en vez de icon.ico.
 app.setAppUserModelId('com.anomaly.proxy-mapper-desktop');
+
+// Quitar la menu bar nativa (File/View/Help). Por default Electron no la
+// muestra en Windows, pero la crea igual — aparece si el usuario pulsa Alt.
+// Llamar `Menu.setApplicationMenu(null)` antes de `app.whenReady()` la
+// elimina por completo. Belt-and-suspenders con `autoHideMenuBar: true`
+// en BrowserWindow abajo.
+Menu.setApplicationMenu(null);
 
 // US-083: graceful shutdown — antes de cerrar la app, detener el proxy con
 // SIGTERM (US-051) y esperar hasta 5s (FORCE_KILL_TIMEOUT_MS en proxy.ts)
@@ -37,6 +44,7 @@ function createWindow(): void {
     width: 1024,
     height: 700,
     title: 'Proxy Mapper',
+    autoHideMenuBar: true,
     // US-073: icono de la ventana (en dev, el .exe aún no existe; en prod
     // el del .exe toma precedencia pero este sirve para el splash inicial).
     icon: join(__dirname, '../../resources/icon.ico'),
