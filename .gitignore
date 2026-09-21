@@ -3,3 +3,11 @@ node_modules/
 *.log
 config.json
 .DS_Store
+
+# Binarios compilados (489 MB cada uno, exceden el límite de GitHub de 100 MB).
+# Distribuir vía GitHub Releases — ver README.md para instrucciones.
+assets/*.exe
+assets/*.zip
+
+# Outputs de electron-builder.
+desktop/dist/
