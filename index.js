@@ -110,6 +110,29 @@ const LISTEN_PORT = 45823;
 // size of chunk before and after mapping ocurrence
 const aroundChunkLength = 27; // Number of chars before/after to include in snippet
 
+/**
+ * Detects if the text ends with a prefix of any masked token.
+ * Used after a `</think>` block to decide whether to hold the content for the next
+ * chunk (because the LLM might have split a masked token like "FFED" across chunks
+ * as "FF" + "ED"). If the text ends with "FF", "S", "ER", etc., we hold; otherwise
+ * we flush and let the next chunk pass through normally.
+ *
+ * @param {string} text - Text to inspect (may end with partial masked token)
+ * @returns {boolean} - True if text ends with a non-trivial prefix of any masked token
+ */
+const endsWithMaskedPrefix = (text) => {
+  if (!text) return false;
+  const tokens = Object.keys(llm2user); // ['FFED', 'SJBDR', 'ERCASTRO', 'CorporativaFooBar', ...]
+  for (const token of tokens) {
+    // Check each prefix length from 1 to token.length-1
+    // (we don't include the full token because that means it's complete, not partial)
+    for (let len = 1; len < token.length; len++) {
+      if (text.endsWith(token.substring(0, len))) return true;
+    }
+  }
+  return false;
+};
+
 // ============================================================================
 // LOGGING HELPER
 // ============================================================================
@@ -602,9 +625,30 @@ const transformChunk = (chunk) => {
     choice.delta.content = fromLLM(choice.delta.content);
   }
 
+  // Transform streaming reasoning_content (thinking tokens emitted by some models
+  // outside of <think>...</think> tags; e.g., MiniMax-M3 native reasoning field)
+  if (choice.delta?.reasoning_content) {
+    choice.delta.reasoning_content = fromLLM(choice.delta.reasoning_content);
+  }
+
+  // Transform streaming refusal (model-side refusal text)
+  if (choice.delta?.refusal) {
+    choice.delta.refusal = fromLLM(choice.delta.refusal);
+  }
+
   // Transform complete message content (non-streaming responses)
   if (choice.message?.content) {
     choice.message.content = fromLLM(choice.message.content);
+  }
+
+  // Transform complete reasoning_content in message
+  if (choice.message?.reasoning_content) {
+    choice.message.reasoning_content = fromLLM(choice.message.reasoning_content);
+  }
+
+  // Transform complete refusal in message
+  if (choice.message?.refusal) {
+    choice.message.refusal = fromLLM(choice.message.refusal);
   }
 
   // Transform streaming tool_calls (delta.tool_calls in SSE chunks)
@@ -1014,6 +1058,12 @@ const handleChatCompletions = async (req, res) => {
       let firstUnmappedContext = '';
       // Buffer for <think>...</think> tags that may span multiple SSE chunks
       let thinkBuffer = '';
+      // Tracks whether we're in "after think block" mode (holding content between
+      // </think> and the next <think>). In this mode, we MUST accumulate across
+      // multiple chunks without resetting, because the LLM can split masked tokens
+      // (e.g., "FFED") across 2-3+ chunks. Resetting thinkBuffer after each chunk
+      // would cause the client to concatenate the chunks and see FFED leak through.
+      let isInAfterThink = false;
 
       // Accumulator for fragmented tool_calls (see explanation below)
       const pendingToolCalls = new Map();
@@ -1105,6 +1155,26 @@ const handleChatCompletions = async (req, res) => {
           if (hasToolCalls) {
             flushToolCalls();
           }
+          // CRITICAL: flush any pending thinkBuffer (held back "after" content from a previous
+          // complete think block OR mid-think content). If we don't, the last chunk with a partial
+          // masked token (e.g., "BDLH FF") gets lost and opencode sees it as-is.
+          if (thinkBuffer) {
+            log(`[DIAG flush-thinkBuffer at [DONE]] ${isInAfterThink ? 'after-mode' : 'normal-mode'} sending ${thinkBuffer.length} chars: ${JSON.stringify(thinkBuffer).substring(0, 200)}`);
+            const flushChunk = {
+              id: `chatcmpl-flush-${Date.now()}`,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model: 'unknown',
+              choices: [{
+                index: 0,
+                delta: { content: fromLLM(thinkBuffer) },
+                finish_reason: null
+              }]
+            };
+            res.write(`data: ${JSON.stringify(flushChunk)}\n\n`);
+            thinkBuffer = '';
+            isInAfterThink = false;
+          }
           res.write('data: [DONE]\n\n');
           return;
         }
@@ -1124,7 +1194,10 @@ const handleChatCompletions = async (req, res) => {
           const choice = parsed.choices?.[0];
 
           // CASE 3a: Tool call fragment - accumulate, don't send yet
-          if (choice?.delta?.tool_calls) {
+          // NOTE: guard with length > 0 because some providers emit `tool_calls: []`
+          // on early/chunked responses (truthy array but empty). Without this guard,
+          // the entire chunk (including any delta.content) would be silently dropped.
+          if (choice?.delta?.tool_calls?.length > 0) {
             hasToolCalls = true;
 
             for (const tc of choice.delta.tool_calls) {
@@ -1154,7 +1227,23 @@ const handleChatCompletions = async (req, res) => {
               if (tc.function?.arguments) pending.args += tc.function.arguments;
             }
 
-            return; // Don't forward this chunk; we're accumulating
+            // If the same chunk ALSO had delta.content, demap and forward it now
+            // (do NOT silently drop it; the LLM may emit both in the same chunk).
+            if (choice.delta?.content) {
+              const transformed = transformChunk(parsed);
+              const cleaned = cleanChunk(transformed);
+              // DEFENSIVE: re-apply fromLLM on cleaned delta fields (same reasoning as CASE 3c)
+              if (cleaned.choices?.[0]?.delta?.content) {
+                cleaned.choices[0].delta.content = fromLLM(cleaned.choices[0].delta.content);
+              }
+              if (cleaned.choices?.[0]?.delta?.reasoning_content) {
+                cleaned.choices[0].delta.reasoning_content = fromLLM(cleaned.choices[0].delta.reasoning_content);
+              }
+              log(`[DIAG outgoing #${chunkCount}] content (CASE 3a+content): ${JSON.stringify(cleaned.choices?.[0]?.delta?.content || '')}`);
+              res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
+            }
+
+            return; // Don't forward the rest of the chunk; we're accumulating tool_calls
           }
 
           // CASE 3b: LLM finished emitting tool calls - flush accumulated calls
@@ -1179,6 +1268,29 @@ const handleChatCompletions = async (req, res) => {
           // CASE 3c: Regular content chunk - transform and forward
           const transformed = transformChunk(parsed);
           const cleaned = cleanChunk(transformed);
+          // DEFENSIVE: apply fromLLM one more time on the cleaned delta fields
+          // because the thinkBuffer concatenation can form masked words from
+          // partial fragments that no single chunk contained (e.g., chunk 1
+          // has "FF" and chunk 2 has "ED" → after concat in thinkBuffer,
+          // they form "FFED" which no single chunk's transformChunk saw).
+          // Also catches any future field we forgot to add to transformChunk.
+          if (cleaned.choices?.[0]?.delta?.content) {
+            cleaned.choices[0].delta.content = fromLLM(cleaned.choices[0].delta.content);
+          }
+          if (cleaned.choices?.[0]?.delta?.reasoning_content) {
+            cleaned.choices[0].delta.reasoning_content = fromLLM(cleaned.choices[0].delta.reasoning_content);
+          }
+          if (cleaned.choices?.[0]?.message?.content) {
+            cleaned.choices[0].message.content = fromLLM(cleaned.choices[0].message.content);
+          }
+          if (cleaned.choices?.[0]?.message?.reasoning_content) {
+            cleaned.choices[0].message.reasoning_content = fromLLM(cleaned.choices[0].message.reasoning_content);
+          }
+          // DEBUG: log if FFED (or any mapped value) still appears in the outgoing chunk
+          const outgoingStr = JSON.stringify(cleaned);
+          if (outgoingStr.includes('FFED') || outgoingStr.includes('SJBDR') || outgoingStr.includes('CorporativaFooBar') || outgoingStr.includes('ERCASTRO')) {
+            log(`[DEBUG demap-leak] outgoing chunk still has masked token: ${outgoingStr.substring(0, 300)}`);
+          }
           if (!firstRawContext) {
             firstRawContext = extractMappedContext(jsonStr, llm2user);
           }
@@ -1188,13 +1300,64 @@ const handleChatCompletions = async (req, res) => {
           // Extract <think>...</think> and send as reasoning_content
           // so opencode renders it natively with textMuted (gray) color
           const content = cleaned.choices?.[0]?.delta?.content || '';
+
+          // === AFTER-THINK MODE ===
+          // We just emitted a complete </think> block and the LLM started emitting
+          // "after" content (the actual response). The LLM can split masked tokens
+          // (e.g., "FFED") across chunks. We hold the "after" content UNTIL the
+          // next chunk arrives, then check: if the held content ends with a prefix
+          // of any masked token, keep accumulating (the next chunk may complete it).
+          // Otherwise, flush and exit after-mode so subsequent chunks pass through.
+          if (isInAfterThink) {
+            if (content) {
+              // Append new content to existing after-buffer
+              thinkBuffer += content;
+              const newThinkIdx = thinkBuffer.indexOf('<think>');
+              if (newThinkIdx !== -1) {
+                // New think block found in the accumulated buffer. Flush the
+                // "after" content (before <think>) and exit after-mode.
+                const flushedAfter = thinkBuffer.substring(0, newThinkIdx);
+                if (flushedAfter) {
+                  log(`[DIAG after-flush] flushing ${flushedAfter.length} chars: ${JSON.stringify(flushedAfter).substring(0, 200)}`);
+                  cleaned.choices[0].delta.content = fromLLM(flushedAfter);
+                  res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
+                }
+                thinkBuffer = thinkBuffer.substring(newThinkIdx);
+                isInAfterThink = false;
+                // Fall through to normal think block logic below
+              } else if (endsWithMaskedPrefix(thinkBuffer)) {
+                // Held content ends with a prefix of a masked token (e.g., "FF").
+                // Hold for the next chunk to potentially complete the token.
+                return;
+              } else {
+                // No partial masked token — safe to flush everything we have and
+                // exit after-mode. The CURRENT chunk's content has already been
+                // appended to thinkBuffer, so we don't need to reprocess it.
+                cleaned.choices[0].delta.content = fromLLM(thinkBuffer);
+                res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
+                thinkBuffer = '';
+                isInAfterThink = false;
+                return;
+              }
+            } else {
+              // Empty content chunk while in after mode — just forward (no new content)
+              if (cleaned.choices?.[0]?.delta?.reasoning_content) {
+                cleaned.choices[0].delta.reasoning_content = fromLLM(cleaned.choices[0].delta.reasoning_content);
+              }
+              res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
+              return;
+            }
+          }
+
           if (content) {
             thinkBuffer += content;
             const thinkStartIdx = thinkBuffer.indexOf('<think>');
             const thinkEndIdx = thinkBuffer.indexOf('</think>');
             if (thinkStartIdx === -1) {
               // No think tag - send as regular content
-              cleaned.choices[0].delta.content = thinkBuffer;
+              // DEFENSIVE: demap the thinkBuffer because it may contain masked tokens
+              // formed by concatenating fragments across chunks (e.g., "FF" + "ED" → "FFED").
+              cleaned.choices[0].delta.content = fromLLM(thinkBuffer);
               res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
               thinkBuffer = '';
             } else if (thinkEndIdx !== -1 && thinkEndIdx > thinkStartIdx) {
@@ -1203,27 +1366,34 @@ const handleChatCompletions = async (req, res) => {
               const thinkContent = thinkBuffer.substring(thinkStartIdx + 7, thinkEndIdx);
               const after = thinkBuffer.substring(thinkEndIdx + 8);
               if (before) {
-                cleaned.choices[0].delta.content = before;
+                cleaned.choices[0].delta.content = fromLLM(before);
                 res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
               }
               // Send think content as reasoning_content (opencode renders gray)
               cleaned.choices[0].delta.content = null;
-              cleaned.choices[0].delta.reasoning_content = thinkContent;
+              cleaned.choices[0].delta.reasoning_content = fromLLM(thinkContent);
               res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
-              thinkBuffer = '';
+              // CRITICAL FIX: enter AFTER-THINK mode. Hold the "after" content in thinkBuffer
+              // and accumulate across chunks until a new <think> is found or stream ends.
+              // This catches masked tokens (e.g., "FFED") split across 2, 3, or more chunks.
               if (after) {
-                cleaned.choices[0].delta = { content: after };
-                res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
+                thinkBuffer = after;
+                isInAfterThink = true;
+              } else {
                 thinkBuffer = '';
               }
             } else if (thinkStartIdx > 0) {
               // Content before think tag - send it, buffer the rest
-              cleaned.choices[0].delta.content = thinkBuffer.substring(0, thinkStartIdx);
+              cleaned.choices[0].delta.content = fromLLM(thinkBuffer.substring(0, thinkStartIdx));
               res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
               thinkBuffer = thinkBuffer.substring(thinkStartIdx);
             }
             // else: think tag started but not complete yet - wait for more chunks
           } else {
+            // DEFENSIVE: re-demap even the empty-content branch (catches reasoning_content leaks)
+            if (cleaned.choices?.[0]?.delta?.reasoning_content) {
+              cleaned.choices[0].delta.reasoning_content = fromLLM(cleaned.choices[0].delta.reasoning_content);
+            }
             res.write(`data: ${JSON.stringify(cleaned)}\n\n`);
           }
         } else {
@@ -1267,6 +1437,26 @@ const handleChatCompletions = async (req, res) => {
         // Flush any pending tool calls that weren't triggered by [DONE]
         if (hasToolCalls) {
           flushToolCalls();
+        }
+        // CRITICAL: flush any pending thinkBuffer (held back "after" content from a previous
+        // complete think block OR mid-think content). If the LLM closes the stream without
+        // sending [DONE], we still need to deliver the buffered content to opencode.
+        if (thinkBuffer) {
+          log(`[DIAG flush-thinkBuffer at end-of-stream] ${isInAfterThink ? 'after-mode' : 'normal-mode'} sending ${thinkBuffer.length} chars: ${JSON.stringify(thinkBuffer).substring(0, 200)}`);
+          const flushChunk = {
+            id: `chatcmpl-flush-${Date.now()}`,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: 'unknown',
+            choices: [{
+              index: 0,
+              delta: { content: fromLLM(thinkBuffer) },
+              finish_reason: null
+            }]
+          };
+          res.write(`data: ${JSON.stringify(flushChunk)}\n\n`);
+          thinkBuffer = '';
+          isInAfterThink = false;
         }
         // Send final [DONE] marker to OpenCode
         res.write('data: [DONE]\n\n');

@@ -1,11 +1,12 @@
 /**
  * proxy.ts - Lifecycle del proxy heredado.
  *
- * - US-050 (desviado): spawn directo de `node index.js` (no `npm.cmd run dev`).
- *   Ver "FIX post-Épica 5" en US.md: la cadena `cmd.exe → npm.cmd → nodemon →
- *   node index.js` rompe la herencia de stdio en Windows, así que los logs
- *   del proxy nunca llegan al wrapper UI. Spawnear node directo también
- *   elimina el bug de procesos huérfanos al hacer stop.
+ * - US-050 (desviado): en vez de `spawn('node', ['index.js'])` usamos
+ *   `utilityProcess.fork()` de Electron. Beneficios:
+ *   - No depende de `node.exe` instalado en el sistema del usuario (usa
+ *     el Node.js embebido en Electron).
+ *   - Hereda el package.json `"type": "module"` del padre para ESM.
+ *   - Streams stdout/stderr accesibles vía `stdio: 'pipe'`.
  * - US-051: stop con SIGTERM + escalación a `taskkill /f` tras 5s.
  * - US-052: mutex en memoria (`child !== null` + flag `stopInProgress`).
  * - US-053: handlers IPC en `main/ipc.ts`.
@@ -14,8 +15,8 @@
  * - US-056: pipea stdout/stderr del child al buffer de logs + IPC.
  * - US-057: `cwd` resuelve en dev (parent) o producción (`process.resourcesPath/proxy`).
  */
-import { spawn as nativeSpawn, type ChildProcess } from 'node:child_process';
-import crossSpawn from 'cross-spawn';
+import { spawn as nativeSpawn } from 'node:child_process';
+import { utilityProcess, type UtilityProcess } from 'electron';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -24,17 +25,6 @@ import { PROXY_SPAWN_OPTIONS } from './constants';
 import { appendLogLine } from './logs';
 import { logger } from './logger';
 import { emitProxyState } from './state-emitter';
-
-/**
- * Wrapper sobre `child_process.spawn` que arregla el bug de Windows con
- * archivos `.cmd`/`.bat`. `cross-spawn` se encarga de invocar `cmd.exe /c`
- * internamente y escapar argumentos correctamente.
- *
- * - `nativeSpawn` se sigue usando para `taskkill` (binario nativo, sin .cmd).
- */
-function safeSpawn(command: string, args: string[], options: Parameters<typeof crossSpawn>[2]): ChildProcess {
-  return crossSpawn(command, args, options) as ChildProcess;
-}
 
 export type StartResult =
   | { ok: true; pid: number }
@@ -46,7 +36,7 @@ export type StopResult =
 
 const FORCE_KILL_TIMEOUT_MS = 5000;
 
-let child: ChildProcess | null = null;
+let child: UtilityProcess | null = null;
 let stopInProgress = false;
 
 export function isProxyRunning(): boolean {
@@ -76,7 +66,7 @@ function pipeChildStream(stream: NodeJS.ReadableStream | null, source: 'stdout' 
   logger.info(`pipeChildStream(${source}): pipe abierto, esperando datos`);
   const rl = createInterface({ input: stream });
   rl.on('line', (line) => {
-    logger.info(`pipeChildStream(${source}) raw: ${line.substring(0, 80)}`);
+    logger.info(`pipeChildStream(${source}) raw: ${line.substring(0, 500)}`);
     appendLogLine(line);
   });
   rl.on('close', () => logger.info(`pipeChildStream(${source}): cerrado`));
@@ -106,36 +96,39 @@ export async function startProxy(): Promise<StartResult> {
   emitProxyState({ state: 'starting' });
 
   try {
-    const spawned = safeSpawn('node', ['index.js'], {
+    const spawned = utilityProcess.fork(join(appRoot, 'index.js'), [], {
       cwd: appRoot,
-      ...PROXY_SPAWN_OPTIONS,
+      stdio: 'pipe',
+      serviceName: 'proxy-mapper',
     });
     child = spawned;
 
     const pid = spawned.pid ?? -1;
-    logger.info(`startProxy: proxy arrancado (pid=${pid}) en ${appRoot}`);
+    logger.info(`startProxy: proxy arrancado (pid=${pid}) en ${appRoot} via utilityProcess`);
 
     // US-056: pipear stdout/stderr al buffer + IPC.
     pipeChildStream(spawned.stdout, 'stdout');
     pipeChildStream(spawned.stderr, 'stderr');
 
     // US-055: listeners para detectar crash / exit normal.
-    spawned.on('exit', (code, signal) => {
-      logger.info(
-        `startProxy: child exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`,
-      );
+    // Nota: UtilityProcess TS types sólo declaran 'exit'/'message'/'spawn',
+    // pero a runtime también emite 'error' (EventEmitter). Cast a EventEmitter
+    // para subscribir sin romper el typecheck.
+    const emitter = spawned as unknown as NodeJS.EventEmitter;
+    emitter.on('error', (err: Error) => {
+      logger.error(`startProxy: child error: ${err.message}`);
+      if (child === spawned) child = null;
+      emitCrashed(err.message);
+    });
+
+    spawned.on('exit', (code: number) => {
+      logger.info(`startProxy: child exited (code=${code ?? 'null'})`);
       if (child === spawned) child = null;
       if (stopInProgress || code === 0 || code === null) {
         emitProxyState({ state: 'off' });
       } else {
-        const reasonStr = `Exit code ${code}${signal ? ` (signal ${signal})` : ''}`;
-        emitCrashed(reasonStr);
+        emitCrashed(`Exit code ${code}`);
       }
-    });
-
-    spawned.on('error', (err) => {
-      if (child === spawned) child = null;
-      emitCrashed(err.message);
     });
 
     emitProxyState({ state: 'running' });
@@ -161,12 +154,23 @@ export async function stopProxy(): Promise<StopResult> {
   emitProxyState({ state: 'stopping' });
 
   try {
-    if (target.exitCode !== null || target.signalCode !== null) {
-      logger.info(
-        `stopProxy: child ya terminado (exit=${target.exitCode}, signal=${target.signalCode})`,
-      );
+    // UtilityProcess no expone exitCode/signalCode en sus types; usamos el
+    // return value de kill() (true = signal enviado, false = ya terminado).
+    let killSent = false;
+    try {
+      killSent = target.kill();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`stopProxy: fallo al enviar kill: ${reason}`);
+      return { ok: false, reason };
+    }
+
+    if (!killSent) {
+      logger.info(`stopProxy: process ya terminado antes del kill`);
       return { ok: true };
     }
+
+    logger.info(`stopProxy: kill signal enviado a pid=${target.pid ?? '?'}`);
 
     return await new Promise<StopResult>((resolve) => {
       let resolved = false;
@@ -183,16 +187,6 @@ export async function stopProxy(): Promise<StopResult> {
         logger.info(`stopProxy: proxy terminado (pid=${target.pid ?? '?'})`);
         finish({ ok: true });
       });
-
-      try {
-        target.kill();
-        logger.info(`stopProxy: kill signal enviado a pid=${target.pid ?? '?'}`);
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.error(`stopProxy: fallo al enviar kill: ${reason}`);
-        finish({ ok: false, reason });
-        return;
-      }
 
       forceKillTimer = setTimeout(() => {
         const pid = target.pid;
