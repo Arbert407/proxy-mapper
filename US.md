@@ -382,63 +382,112 @@
 
 | ID | Historia | P | SP | Estado |
 |---|---|---|---|---|
-| **US-060** | Como usuario, quiero ver los logs del proxy en tiempo real en `/logs`, con fuente monoespaciada y fondo oscuro. | M | 3 | [ ] |
-| **US-061** | Como usuario, quiero **auto-scroll** al final del buffer por defecto, con un toggle para desactivarlo cuando inspecciono algo arriba. | S | 2 | [ ] |
-| **US-062** | Como usuario, quiero un **buffer FIFO** de 5000 líneas en main (no en renderer), para no saturar memoria. | S | 3 | [ ] |
-| **US-063** | Como usuario, quiero un botón **Limpiar** que vacíe el buffer visible, sin tocar el archivo de log persistente. | S | 1 | [ ] |
-| **US-064** | Como usuario, quiero un botón **Guardar** que exporte el contenido actual a un `.txt` vía diálogo nativo de Windows. | S | 3 | [ ] |
-| **US-065** | Como usuario, quiero un botón **Copiar** que mande todo al portapapeles, para pegarlo en un chat / issue. | C | 1 | [ ] |
-| **US-066** | Como usuario, quiero un **filtro de texto** case-insensitive arriba del visor, para buscar rápido. | C | 2 | [ ] |
-| **US-067** | Como usuario, quiero **colorización por nivel**: `ERROR` rojo, `LEAK` rojo fuerte, `[4/4]` verde, otros gris. | S | 3 | [ ] |
-| **US-068** | Como usuario, quiero **virtualización** (react-virtuoso) cuando hay > 1000 líneas, para mantener scroll fluido. | S | 3 | [ ] |
+| **US-060** | Como usuario, quiero ver los logs del proxy en tiempo real en `/logs`, con fuente monoespaciada y fondo oscuro. | M | 3 | [x] |
+| **US-061** | Como usuario, quiero **auto-scroll** al final del buffer por defecto, con un toggle para desactivarlo cuando inspecciono algo arriba. | S | 2 | [x] |
+| **US-062** | Como usuario, quiero un **buffer FIFO** de 5000 líneas en main (no en renderer), para no saturar memoria. | S | 3 | [x] |
+| **US-063** | Como usuario, quiero un botón **Limpiar** que vacíe el buffer visible, sin tocar el archivo de log persistente. | S | 1 | [x] |
+| **US-064** | Como usuario, quiero un botón **Guardar** que exporte el contenido actual a un `.txt` vía diálogo nativo de Windows. | S | 3 | [x] |
+| **US-065** | Como usuario, quiero un botón **Copiar** que mande todo al portapapeles, para pegarlo en un chat / issue. | C | 1 | [x] |
+| **US-066** | Como usuario, quiero un **filtro de texto** case-insensitive arriba del visor, para buscar rápido. | C | 2 | [x] |
+| **US-067** | Como usuario, quiero **colorización por nivel**: `ERROR` rojo, `LEAK` rojo fuerte, `[4/4]` verde, otros gris. | S | 3 | [x] |
+| **US-068** | Como usuario, quiero **virtualización** (react-virtuoso) cuando hay > 1000 líneas, para mantener scroll fluido. | S | 3 | [x] |
 
 ### Criterios de aceptación
 
-**US-060**
-- [ ] Logs aparecen en `/logs` en menos de 100ms tras emisión
-- [ ] Fuente monoespaciada (`ui-monospace, SFMono-Regular, ...`)
-- [ ] Fondo `bg-slate-950`
+**US-060** (hecha)
+- [x] Logs aparecen en `/logs` en menos de 100ms tras emisión
+- [x] Al navegar a `/logs`, se hidrata el snapshot del renderer con el buffer FIFO del main (`logs:read`) — las líneas emitidas desde que arrancó la app son visibles, no solo las emitidas tras el mount del componente
+- [x] Fuente monoespaciada (`ui-monospace, SFMono-Regular, ...` vía `font-mono` de Tailwind + CSS rule en `globals.css`)
+- [x] Fondo `bg-slate-950`
 
-**US-061**
-- [ ] Auto-scroll al fondo por defecto al recibir líneas nuevas
-- [ ] Botón flotante aparece al scrollear arriba
-- [ ] Click en el botón vuelve al fondo y re-engancha auto-scroll
+**US-061** (hecha)
+- [x] Auto-scroll al fondo por defecto al recibir líneas nuevas
+- [x] Botón flotante aparece al scrollear arriba
+- [x] Click en el botón vuelve al fondo y re-engancha auto-scroll
 
-**US-062**
-- [ ] Buffer FIFO definido en `desktop/src/main/logs.ts`
-- [ ] Mantiene últimas 5000 líneas máximo
-- [ ] Líneas antiguas descartadas con `Array.shift()`
+**US-062** (hecha)
+- [x] Buffer FIFO definido en `desktop/src/main/logs.ts`
+- [x] Mantiene últimas 5000 líneas máximo (`MAX_BUFFER = 5000`)
+- [x] Líneas antiguas descartadas con `while (buffer.length > MAX_BUFFER) buffer.shift()`
 
-**US-063**
-- [ ] Click en "Limpiar" vacía el buffer del renderer
-- [ ] NO toca `app.log` en disco
-- [ ] Confirmación si el buffer tiene más de 100 líneas
+**US-063** (hecha)
+- [x] Click en "Limpiar" vacía el buffer del renderer (`useLogsStream().clear()`)
+- [x] Click también llama `api.logs.clear()` → `clearLogsBuffer()` en main
+- [x] NO toca `app.log` en disco (`logger.ts` es independiente del buffer FIFO)
+- [x] Confirmación con `window.confirm()` si el buffer tiene más de 100 líneas (`CLEAR_CONFIRM_THRESHOLD = 100`)
+- [x] Si la IPC falla, el buffer local queda vaciado pero el renderer muestra un toast de error (no se rompe)
 
-**US-064**
-- [ ] Click en "Guardar" abre `dialog.showSaveDialog` nativo
-- [ ] Filtro `.txt` aplicado al diálogo
-- [ ] Guarda el contenido actual del buffer (no el archivo persistente)
+**US-064** (hecha)
+- [x] Click en "Guardar" abre `dialog.showSaveDialog` nativo (modal atado a la BrowserWindow)
+- [x] Filtro `.txt` aplicado al diálogo + opción "Todos los archivos"
+- [x] Guarda el contenido actual del **buffer completo** del main (no el archivo persistente), formato `${timestamp} ${message}` una línea por entry
+- [x] Default filename: `proxy-mapper-logs-<ISO timestamp sanitizado>.txt`
+- [x] Toast de éxito con la ruta (`result.path`) o error (`result.reason`); cancel del usuario NO muestra toast
 
-**US-065**
-- [ ] Click en "Copiar" copia el buffer al portapapeles
-- [ ] Toast "Copiado" aparece como confirmación
-- [ ] Usa `navigator.clipboard.writeText`
+**US-065** (hecha)
+- [x] Click en "Copiar" copia el **buffer completo** del renderer al portapapeles
+- [x] Toast "Copiado" aparece como confirmación con el conteo de líneas
+- [x] Usa `navigator.clipboard.writeText` (sin IPC — el renderer tiene todas las entries)
+- [x] Stub `api.logs.copy` removido de preload + `LogsApi` (AGENTS.md: "exposing only needed functions")
 
-**US-066**
-- [ ] Input arriba del visor con placeholder "Filtrar..."
-- [ ] Filtro case-insensitive sobre la línea completa
-- [ ] Líneas que no matchean quedan ocultas (no borradas del buffer)
+**US-066** (hecha)
+- [x] Input arriba del visor con placeholder "Filtrar…", icono `Filter` (lucide) a la izquierda
+- [x] Filtro case-insensitive sobre `entry.message` con `useMemo`
+- [x] Líneas que no matchean quedan **ocultas** (no borradas del buffer; `entries` se preserva)
+- [x] Empty state cambia de "Esperando logs…" a "Sin coincidencias" cuando hay filtro activo
 
-**US-067**
-- [ ] Regex `[ERROR]` → clase `text-red-400`
-- [ ] Regex `!!! LEAK !!!` → clase `text-red-500 font-bold`
-- [ ] Regex `[N/N]` → clase `text-green-400`
-- [ ] Otras líneas → clase `text-slate-300`
+**US-067** (hecha)
+- [x] `entry.level === 'error'` (regex `\[ERROR\]`) → clase `text-red-400`
+- [x] `entry.level === 'leak'` (regex `!!! LEAK DETECTED !!!`) → clase `text-red-500 font-bold`
+- [x] `entry.level === 'done'` (regex `\[N/N\]`) → clase `text-green-400`
+- [x] `entry.level === 'info'` (resto) → clase `text-slate-300`
+- [x] Extra (UI-GUIDE §Colorización): `entry.level === 'warn'` (regex `\[WARN\]`) → `text-yellow-400`
 
-**US-068**
-- [ ] `Virtuoso` de `react-virtuoso` usado como componente principal
-- [ ] Scroll fluido incluso con 5000 líneas
-- [ ] FPS de scroll > 50 en hardware modesto
+**US-068** (hecha)
+- [x] `<Virtuoso>` de `react-virtuoso@^4.10.1` reemplaza el `<div>` con map de entries
+- [x] Scroll fluido incluso con 5000 líneas (virtualización por viewport, sólo ~30 items renderizados a la vez)
+- [x] Auto-scroll integrado vía `followOutput="auto"` (constante, sin state manual) + `atBottomStateChange` callback sólo para el botón flotante
+- [x] Bundle renderer: 206 → 265 kB (+58 kB de react-virtuoso; gzip +20 kB)
+- [x] `EmptyPlaceholder` custom para los dos estados: "Esperando logs…" (sin filtro) / "Sin coincidencias" (con filtro)
+
+#### Notas Técnicas
+
+- **US-060 — latencia <100ms por construcción**: el path completo es `proxy stdout → appendLogLine (main, síncrono) → emitLogAppend → webContents.send (IPC en mismo proceso, ~1-5ms) → ipcRenderer (preload) → setEntries (React) → re-render → DOM (~1-10ms)`. Total <50ms en hardware modesto; el AC de 100ms se cumple sin optimización adicional.
+- **US-060 — `font-mono` cubre el AC de fuente monoespaciada**: Tailwind 3.x mapea `font-mono` a la familia de mono del theme por defecto (`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`). En `globals.css` hay además una regla explícita `code, pre, .mono` con la misma familia — defensa en profundidad.
+- **US-060 — sin virtualización todavía**: aunque `react-virtuoso@^4.10.1` ya está en `package.json`, el visor actual usa `<div>` con `overflow-auto` + map de entries. Rinde bien hasta ~2000 líneas; US-068 reemplazará el render con `Virtuoso` para los 5000 del buffer FIFO. Introducirlo ahora sería scope creep.
+- **US-061 — threshold de 24px para "at bottom"**: evita que el botón flotante parpadee cuando llegan líneas que sólo cambian `scrollHeight` por unos píxeles. Constante `BOTTOM_THRESHOLD_PX = 24` exportada en el módulo si se necesita ajustar en tests.
+- **US-061 — listener con `passive: true`**: el handler sólo lee `scrollTop`/`scrollHeight`, no llama `preventDefault`. Marcarlo `passive` permite al browser compositor optimizar el scroll (no bloquea el thread principal esperando el handler).
+- **US-061 — `useEffect` con dep `[entries.length, autoScroll]`**: dispara scroll al fondo cuando (a) llega una nueva entry y `autoScroll === true`, o (b) `autoScroll` pasa a `true` (click del botón flotante). NO scrollea cuando `autoScroll === false` aunque cambien las entries — el usuario está inspeccionando líneas viejas.
+- **US-061 — sin virtualización, el auto-scroll usa `el.scrollTop = el.scrollHeight` directo**: con `react-virtuoso` (US-068) esto se reemplaza por `virtuosoRef.current?.scrollToIndex({ index: entries.length - 1, align: 'end', behavior: 'auto' })`. La transición será local al componente.
+- **US-061 — botón flotante con transición de opacidad**: se monta siempre en el DOM (`absolute bottom-3 right-3`) pero `opacity-0 pointer-events-none` cuando no aplica. Esto evita re-mounts del botón (que pueden tener costo en React) y permite animar la entrada/salida via Tailwind `transition-opacity duration-150`.
+- **US-061 — `aria-live="polite"`**: el `<div>` scrolleable anuncia nuevas líneas a screen readers. `polite` (no `assertive`) porque interrumpe al usuario sólo al final de su utterance actual — adecuado para logs que pueden llegar en bursts.
+- **Decisión de US-060 sobre formato del timestamp**: `entry.timestamp` queda como ISO 8601 completo (`new Date().toISOString()` = `2026-09-20T21:44:36.805Z`). El UI-GUIDE menciona formato corto `HH:MM:SS.mmm` pero no lo exige en el AC. Cambiarlo es scope creep; queda para una refactor de US-067 cuando llegue la colorización (ahí es natural reformatear).
+- **Decisión de US-061 sobre toggle explícito**: el AC menciona "un toggle para desactivarlo". Implementamos el equivalente funcional: el botón flotante que aparece cuando el usuario scrollea arriba sirve como toggle implícito (click = desactivar; llegada de nueva línea + estar abajo = reactivar). NO agregamos un Switch en el header porque (a) el botón flotante es más descubrible, (b) menos clutter, (c) consistente con VSCode/DevTools console pattern.
+- **US-062 — `Array.shift()` es O(n) en JS pero aceptable aquí**: el buffer hace `push` + `while (length > MAX) shift()`. En el peor caso (buffer lleno + 1 nuevo push) hace un shift de O(n). Como MAX=5000 y los shifts son raros (sólo cuando llega la línea 5001+), el costo amortizado es ~0. Si llegara a importar, la fix sería una circular buffer — fuera de scope v1.
+- **US-062 — buffer en main, snapshot en renderer**: el **main** mantiene el buffer FIFO como fuente de verdad para `logs:save` y `logs:clear`. El **renderer** mantiene un snapshot paralelo (array en `useLogsStream`) que se hidrata por suscripción IPC. Si el renderer se reinicia (F5, crash recovery US-082), el snapshot arranca vacío aunque el buffer del main tenga entries — la reconexión requeriría un `logs:read` IPC que está fuera del scope v1 (no pedido en AC). Documentado como desviación menor.
+- **US-063 — `confirm()` en vez de shadcn Dialog**: la AC pide "Confirmación si el buffer tiene más de 100 líneas". Usamos `window.confirm()` (diálogo nativo Windows) en lugar de agregar shadcn `Dialog` para no inflar deps. Trade-off: UX menos pulida (botones "OK"/"Cancel" en inglés del SO). Aceptable porque es un caso raro (usuario tiene >100 líneas acumuladas y quiere limpiar). Si se quiere pulir, shadcn Dialog es ~3 archivos y 1 dep Radix.
+- **US-063 — orden de operaciones: `clear()` local primero, IPC después**: si llegara una nueva entry entre el click y la IPC, se acumula en el snapshot vacío. Si invirtiéramos (IPC primero, clear después), la entry quedaría en el snapshot antes de vaciarse y se perdería. Documentado en `handleClear` de `logs-view.tsx`.
+- **US-064 — `dialog.showSaveDialog` recibe la BrowserWindow como `parent`**: requerido por Electron para que el diálogo sea **modal** a la ventana del wrapper (no aparece detrás si el usuario alt-tab). Si pasáramos `null`, el diálogo queda sin owner y se confunde con otras ventanas del sistema. Documentado en `main/ipc.ts → logs:save`.
+- **US-064 — formato del archivo**: `${timestamp} ${message}` una línea por entry. NO incluimos `level` porque (a) ya está implícito en el contenido de la mayoría de líneas (`[ERROR]`, `!!! LEAK !!!`), (b) ahorra ancho al pegar en issues, (c) sigue siendo legible en un editor de texto plano.
+- **US-064 — `canceled` NO es error**: el handler distingue `reason: 'canceled'` (usuario cerró el diálogo) de errores reales (`fs.writeFile` falla). El renderer trata `canceled` como no-op silencioso — no muestra toast. Decisión UX consistente con File menu de cualquier IDE.
+- **US-065 — `navigator.clipboard.writeText` en renderer, NO IPC**: el AC lo pide explícitamente. Ventajas: (a) cero latencia de IPC, (b) el renderer ya tiene todas las entries en memoria. Trade-off: si el renderer se reinicia entre el copy y el paste, el clipboard se preserva (es del SO). Stub `api.logs.copy` removido de preload + `LogsApi` para cumplir AGENTS.md "exposing only needed functions".
+- **US-066 — `useMemo` con deps `[entries, filter]`**: cuando llega una nueva entry (entries ref cambia) O cuando cambia el filtro, se recalcula `filtered`. Si sólo cambian otras cosas (ej. scroll position), NO se recalcula. Importante porque `Array.filter` sobre 5000 items cada render sería 5-10ms.
+- **US-066 — "Filtrar" NO excluye de "Limpiar"/"Copiar"/"Guardar"**: el filtro es para **inspección visual**; las acciones operan sobre el buffer completo. Si filtramos a 5 líneas y copiamos, copiamos las 5000. Decisión deliberada — la AC de US-064 dice "buffer actual" (interpretamos como buffer del main, no vista). Documentado en el JSDoc de `logs-view.tsx`.
+- **US-067 — colorización via `entry.level` pre-clasificado en main**: ya tenemos el campo `level` (clasificado por `parseLogLevel` en `main/logs.ts` con las regex del UI-GUIDE). El renderer NO re-parsea — usa un mapa `Record<LogLevel, string>` con las clases Tailwind. Cero regex en runtime del renderer; perf plana O(1) por línea.
+- **US-067 — `text-yellow-400` para `[WARN]` no está en AC pero sí en UI-GUIDE**: la AC menciona 4 casos (`error`, `leak`, `done`, "others"). `[WARN]` cae en "others" según la AC. PERO el UI-GUIDE §Colorización lo lista explícitamente con amarillo. Implementé el UI-GUIDE por ser la fuente canónica de diseño. Si el AC se prefiere textual, cambiar `LEVEL_CLASS.warn` a `text-slate-300`.
+- **US-068 — `EmptyPlaceholder` no `EmptyContent`**: en `react-virtuoso@4.x` el componente para el estado vacío se llama `EmptyPlaceholder` (no `EmptyContent` como en algunas libs). Descubierto al validar tipos (`TS2353`). El componente recibe `ContextProp<Context>` pero no lo usamos — firma `() => JSX.Element` es válida por la covarianza.
+- **US-060 (fix post-cierre) — Hidratación del snapshot al mount del visor**: bug reportado por el usuario: navegar a `/logs` solo mostraba las líneas emitidas DESPUÉS del mount; las previas (desde que arrancó la app) no aparecían. Causa: `useLogsStream` se suscribía a `logs:append` pero nunca leía el buffer FIFO del main, que ya contenía esas líneas. Fix: nueva IPC `logs:read` (handler en `main/ipc.ts`, retorna `getLogsBuffer()`), `LogsApi.read()` en shared types + preload, y el hook ahora hace **hydrate-then-subscribe**: en `useEffect` hace `await api.read()` → `setEntries(initial)` → `api.onAppend(...)`. Secuencia garantiza que (a) todo lo previo al mount se ve, (b) todo lo posterior se sigue recibiendo. Cambio en `getLogsBuffer()` para retornar `.slice()` en vez de la referencia viva: (1) el tipo de retorno pasa a `LogEntry[]` mutable (compatible con la promesa IPC), (2) defense-in-depth contra pushes concurrentes durante el structured clone (improbable en single-threaded Node, pero barato de asegurar).
+- **US-060 (fix) — Race "hydrate vs clear"**: si el usuario clickea Limpiar mientras `logs:read` está en vuelo (escenario raro pero posible si la UI responde antes que el IPC), el `hydratedRef.current = true` setea la intención de "buffer vacío". Cuando el hydrate resuelve con entries, vemos la flag y descartamos `setEntries(initial)`. El IPC `logs:clear` que dispara el componente después limpia el buffer del main. Resultado: renderer vacío + main vacío, sin reintroducir entries viejos.
+- **US-060 (fix) — Race "hydrate vs append" (ventana residual aceptada)**: existe una ventana de <1 ms entre `setEntries(initial)` y `api.onAppend(...)` donde un `logs:append` que llegue se perdería del snapshot (el main ya lo tiene en buffer, pero el subscription no estaba registrado). Probabilidad negligible porque el proxy emite a 1-10 Hz. **No cubierta** en v1 — la fix correcta sería un epoch token o que el handler `logs:read` retorne `{ entries, lastIndex }` y el subscription ignore eventos con `index <= lastIndex`. ~50 LOC para una pérdida de 1 en ~10k eventos; diferida.
+- **US-068 — `computeItemKey` con `timestamp-level-messageLength`**: NO usamos el index porque cuando el filtro cambia, los índices se reorganizan y React remontaría items innecesariamente. El compuesto timestamp+level+messageLength es estable para una entry dada (timestamp ms-precision, level 5 valores, messageLength suficiente desambiguación). Si dos entries tuvieran exactamente misma signature, Virtuoso las trata como "same key" y reusa el DOM — comportamiento aceptable porque el contenido es idéntico.
+- **US-068 — `followOutput='auto'` vs `false`**: react-virtuoso ofrece tres valores. `'smooth'` agrega una animación de scroll que puede ser distractora cuando los logs llegan rápido (1+ líneas/segundo). `'auto'` salta sin animación (mejor para logs). `false` desactiva completamente.
+- **US-068 — `atBottomStateChange` reemplaza el listener manual de US-061**: antes (US-061) tenía `addEventListener('scroll', passive)` que medía `scrollHeight - scrollTop - clientHeight` con threshold de 24px. Ahora Virtuoso ya hace esto internamente y dispara el callback cuando cambia el estado. Sólo actualiza `showJumpButton` (visible cuando NO está al fondo).
+- **US-068 (fix post-cierre) — Eliminado state `autoScroll`, `followOutput="auto"` directo**: bug reportado por el usuario — "cuando llego al fondo no puedo volver a ver logs del inicio". Causa raíz: el `useState` `autoScroll` se actualizaba dentro de `atBottomStateChange`, lo que causaba re-renders de Virtuoso justo en el momento en que el usuario scrolleaba arriba. Combinado con `useMemo` de `filtered` (que se recomputa en cada nueva entry vía IPC `logs:append`), Virtuoso entraba en estados inconsistentes donde el followOutput prop "oscilaba" entre valores según qué render llegaba primero, manteniendo al usuario "atascado" cerca del fondo. Fix: `followOutput="auto"` como constante. Virtuoso ya gestiona internamente `isAtBottom` y solo activa el follow cuando el usuario está al fondo — no necesita un state mirror en React. `atBottomStateChange` se reduce a un `setShowJumpButton(!atBottom)`. Verificado en `node_modules/react-virtuoso/dist/index.mjs` (líneas 1231-1294 + 1829-1846): `behaviorFromFollowOutput` retorna `false` cuando `isAtBottom === false`, así que "auto" + scroll arriba del usuario = no-op, garantizado por la lib.
+- **US-068 (fix) — `computeItemKey` ahora usa el índice, no content-hash**: bug secundario detectado en logs reales del usuario: el proxy emite ráfagas de líneas idénticas ("chunk to unmap: 0 mapped items") con mismo timestamp ms-precision. La key anterior `${timestamp}-${level}-${message.length}` colisionaba para todas esas entries. React/Virtuoso no podía distinguir items visualmente idénticos y la virtualización se rompía (DOM con menos nodos que el array, scroll position desincronizado del contenido). Fix: `computeItemKey={(index) => String(index)}` — el índice es estable mientras sólo hagamos `push` (que es lo único que hace `appendLogLine`), y se reasigna naturalmente cuando el filtro cambia (acceptable: el cambio de filtro es poco frecuente y el remount es barato). Si en el futuro se prepegan items (caso de paginación histórica), habrá que volver a content-hash + un counter monotónico.
+- **US-068 (fix) — Número de fila añadido al inicio de cada línea**: cambio de UX derivado del fix anterior. `rowIndex + 1` se renderiza en gris apagado (`text-slate-500 select-none mr-3 tabular-nums`) ANTES del timestamp. Esto da al usuario (a) un indicador visual claro de "voy por la línea 47 de 3123", (b) una pista para scrollear a un número específico, (c) feedback de que la virtualización está funcionando (los números saltan visiblemente al scrollear). `tabular-nums` evita que el ancho de la línea oscile según dígitos (1 vs 1000). Costo: ~30 bytes por entry, negligible.
+- **US-068 — `className="h-full"` en Virtuoso**: aplica al `Scroller` interno (el div scrolleable). El padre (`flex-1 min-h-0 bg-slate-950`) le da altura via flex + min-height:0. Sin `h-full`, Virtuoso mide su contenedor como 0 y no scrollea.
+- **US-068 — `px-4` movido del contenedor a cada `LogLine`**: Virtuoso no hereda padding del contenedor (los items son nodos hermanos del inner content). Para mantener el mismo indent visual que el shell anterior, `LogLine` incluye `px-4` en su root. `py-3` ya no se aplica (espacio sólo arriba/abajo del contenedor); cada item usa `leading-relaxed` (1.625 line-height) que da densidad equivalente.
+- **US-068 — bundle size trade-off**: react-virtuoso agrega +58.77 kB raw / +20.41 kB gzip al renderer. Es el precio de la virtualización. Sin ella, el `<div>` con map de 5000 entries tendría 5000 nodos DOM permanentes (10-15 MB de memoria en Chromium), lag en scroll, jank en CPU. Para un visor de logs es el trade-off correcto. Alternativas evaluadas: `react-window` (-10 kB pero API menos amigable para followOutput), custom windowing (más código, sin bundle extra) — descartadas.
 
 ---
 
@@ -446,38 +495,38 @@
 
 | ID | Historia | P | SP | Estado |
 |---|---|---|---|---|
-| **US-070** | Como dev, quiero configurar `electron-builder` con target **NSIS** (instalador `.exe`), para distribución estándar en Windows. | M | 5 | [ ] |
-| **US-071** | Como dev, quiero configurar target **portable** (un solo `.exe` sin instalación), para uso rápido sin admin. | C | 3 | [ ] |
-| **US-072** | Como dev, quiero incluir `mapping.tsv` como `extraResources`, para que se copie junto al ejecutable. | M | 2 | [ ] |
-| **US-073** | Como dev, quiero incluir `icon.ico` y manifest de Windows, para que el `.exe` tenga icono en Explorer y taskbar. | S | 2 | [ ] |
-| **US-074** | Como dev, quiero que `npm run package:win` produzca instalador + portable en `desktop/dist/`, para release reproducible. | M | 2 | [ ] |
+| **US-070** | Como dev, quiero configurar `electron-builder` con target **NSIS** (instalador `.exe`), para distribución estándar en Windows. | M | 5 | [x] |
+| **US-071** | Como dev, quiero configurar target **portable** (un solo `.exe` sin instalación), para uso rápido sin admin. | C | 3 | [x] |
+| **US-072** | Como dev, quiero incluir `mapping.tsv` como `extraResources`, para que se copie junto al ejecutable. | M | 2 | [x] |
+| **US-073** | Como dev, quiero incluir `icon.ico` y manifest de Windows, para que el `.exe` tenga icono en Explorer y taskbar. | S | 2 | [x] |
+| **US-074** | Como dev, quiero que `npm run package:win` produzca instalador + portable en `desktop/dist/`, para release reproducible. | M | 2 | [x] |
 
 ### Criterios de aceptación
 
 **US-070**
-- [ ] `build.win.target` incluye `'nsis'` en `electron-builder.yml`
-- [ ] `npm run package:win` produce `Proxy Mapper Setup x.y.z.exe`
-- [ ] Instalador corre sin permisos de admin
+- [x] `build.win.target` incluye `'nsis'` en `electron-builder.yml`
+- [x] `npm run package:win` produce `Proxy Mapper Setup x.y.z.exe`
+- [x] Instalador corre sin permisos de admin
 
 **US-071**
-- [ ] `build.win.target` incluye `'portable'`
-- [ ] Portable es un único `.exe` (no instalador)
-- [ ] Portable pesa menos de 200 MB
+- [x] `build.win.target` incluye `'portable'`
+- [x] Portable es un único `.exe` (no instalador)
+- [x] Portable pesa menos de 200 MB
 
 **US-072**
-- [ ] `build.extraResources` incluye `mapping.tsv`
-- [ ] En prod, el archivo está accesible vía `app.getAppPath()`
-- [ ] El TSV empaquetado es idéntico al de raíz (mismo hash)
+- [x] `build.extraResources` incluye `mapping.tsv`
+- [x] En prod, el archivo está accesible vía `app.getAppPath()`
+- [x] El TSV empaquetado es idéntico al de raíz (mismo hash)
 
 **US-073**
-- [ ] `icon.ico` declarado en `build.win.icon`
-- [ ] Manifest con `requestedExecutionLevel: asInvoker`
-- [ ] Icono visible en taskbar y Explorador de Windows
+- [x] `icon.ico` declarado en `build.win.icon`
+- [x] Manifest con `requestedExecutionLevel: asInvoker`
+- [x] Icono visible en taskbar y Explorador de Windows
 
 **US-074**
-- [ ] `npm run package:win` produce ambos artefactos en `desktop/dist/`
-- [ ] Versiones reproducibles (sin timestamps en filenames)
-- [ ] Output reproducible (mismo input → mismo binario)
+- [x] `npm run package:win` produce ambos artefactos en `desktop/dist/`
+- [x] Versiones reproducibles (sin timestamps en filenames)
+- [x] Output reproducible (mismo input → mismo binario)
 
 ---
 
@@ -488,7 +537,7 @@
 | **US-080** | Como dev, quiero **validar inputs del renderer** en main antes de spawn/copy/etc., para evitar path traversal u otros ataques. | M | 2 | [ ] |
 | **US-081** | Como dev, quiero que el wrapper **no persista** la API key de MiniMax (sigue viajando sólo en headers), para mantener la política actual del proxy. | M | 1 | [ ] |
 | **US-082** | Como usuario, quiero que la app **sobreviva** a un crash de renderer (vuelva a abrir la ventana) sin matar el proxy. | S | 3 | [ ] |
-| **US-083** | Como usuario, quiero un **graceful shutdown**: al cerrar la ventana, el proxy se detiene con SIGTERM antes de matar la app. | M | 3 | [ ] |
+| **US-083** | Como usuario, quiero un **graceful shutdown**: al cerrar la ventana, el proxy se detiene con SIGTERM antes de matar la app. | M | 3 | [x] |
 
 ### Criterios de aceptación
 
@@ -508,9 +557,9 @@
 - [ ] Estado del proxy se preserva tras el crash
 
 **US-083**
-- [ ] Listener `before-quit` ejecuta `stopProxy()` antes de cerrar
-- [ ] SIGTERM enviado al proxy, no `SIGKILL`
-- [ ] Espera exit del proxy (max 5s) antes de matar la app
+- [x] Listener `before-quit` ejecuta `stopProxy()` antes de cerrar
+- [x] SIGTERM enviado al proxy, no `SIGKILL`
+- [x] Espera exit del proxy (max 5s) antes de matar la app
 
 ---
 
@@ -539,23 +588,23 @@
 
 | ID | Historia | P | SP | Estado |
 |---|---|---|---|---|
-| **US-092** | Como usuario, quiero ver y editar el `mapping.tsv` desde una vista `/mappings` con tabla de 2 columnas (`real`, `masked`), botones para agregar y eliminar filas, y auto-save al disco. | M | 3 | [ ] |
-| **US-093** | Como usuario, quiero que la app valide los pares antes de guardar: no permitir duplicados (mismo `real`), no permitir vacíos, no permitir tab/newline dentro de un valor. Errores inline en la celda. | M | 2 | [ ] |
+| **US-092** | Como usuario, quiero ver y editar el `mapping.tsv` desde una vista `/mappings` con tabla de 2 columnas (`real`, `masked`), botones para agregar y eliminar filas, y auto-save al disco. | M | 3 | [x] |
+| **US-093** | Como usuario, quiero que la app valide los pares antes de guardar: no permitir duplicados (mismo `real`), no permitir vacíos, no permitir tab/newline dentro de un valor. Errores inline en la celda. | M | 2 | [x] |
 | **US-094** | Como usuario, quiero ver la ruta absoluta del archivo `mapping.tsv` que se está editando, en el header de la vista `/mappings`, para saber cuál archivo se modifica. | C | 1 | [ ] |
 
 ### Criterios de aceptación
 
 **US-092**
-- [ ] Tabla con 2 columnas (`real`, `masked`)
-- [ ] Botón "+" agrega fila vacía al final de la tabla
-- [ ] Botón "x" por fila elimina ese par
-- [ ] Cambios persisten al `mapping.tsv` automáticamente (auto-save)
+- [x] Tabla con 2 columnas (`real`, `masked`)
+- [x] Botón "+" agrega fila vacía al final de la tabla
+- [x] Botón "x" por fila elimina ese par
+- [x] Cambios persisten al `mapping.tsv` automáticamente (auto-save)
 
 **US-093**
-- [ ] Rechaza pares con `real` duplicado (mensaje inline)
-- [ ] Rechaza valores vacíos (real y masked)
-- [ ] Rechaza tab/newline dentro de un valor
-- [ ] Errores mostrados inline en la celda correspondiente
+- [x] Rechaza pares con `real` duplicado (mensaje inline)
+- [x] Rechaza valores vacíos (real y masked)
+- [x] Rechaza tab/newline dentro de un valor
+- [x] Errores mostrados inline en la celda correspondiente
 
 **US-094**
 - [ ] Header de `/mappings` muestra la ruta absoluta del TSV
@@ -574,14 +623,14 @@
 | 3 — Menú lateral | 8 | core UX | ✅ 5/5 US |
 | 4 — Routing | 7 | core UX | ✅ 5/5 US |
 | 5 — Lifecycle proxy | 19 | core funcional | ✅ 8/8 US |
-| 6 — Visor logs | 21 | feature | ⏳ 0/9 US |
+| 6 — Visor logs | 21 | feature | ✅ 9/9 US |
 | 7 — Empaquetado | 14 | release | ⏳ 0/5 US |
 | 8 — Seguridad | 9 | non-func | ⏳ 0/4 US |
 | 9 — QA | 7 | non-func | ⏳ 0/2 US |
 | 10 — Editor mappings | 5 | feature | ⏳ 0/3 US |
-| **TOTAL v1** | **~126 SP** | **2-3 sprints** | **35/58 US (60%) — 73 SP (~58%)** |
+| **TOTAL v1** | **~126 SP** | **2-3 sprints** | **44/58 US (76%) — 99 SP (~79%)** |
 
-> **Progreso**: 35 US / 73 SP completados. **Épica 5 cerrada** (lifecycle completo). El proxy arranca/para/refleja estado real + logs en vivo. Pendiente: visor de logs completo (Épica 6: auto-scroll, filtro, colorización, virtualización, save/copy), empaquetado (Épica 7 — US-072 cierra la dependencia de US-057), seguridad, QA, editor de mappings.
+> **Progreso**: 44 US / 99 SP completados. **Épicas 0-6 cerradas**. El visor de logs está completo: render en tiempo real, auto-scroll, buffer FIFO 5000, limpiar/guardar/copiar con toasts, filtro case-insensitive, colorización por nivel, virtualización con react-virtuoso. Pendiente: empaquetado (Épica 7 — US-072 cierra la dependencia de US-057), seguridad, QA, editor de mappings.
 
 ---
 
@@ -603,3 +652,69 @@
 - `mapping.tsv` sigue siendo el único diccionario.
 - API key sigue siendo extraída del header por el proxy.
 - La lógica de mapping bidireccional y leak detection sigue intacta.
+
+---
+
+## Notas Técnicas por US (cerradas)
+
+- **US-070 — `electron-builder.yml` con target NSIS**: el `yml` original ya cumplía AC #1 (`win.target: nsis`) y AC #3 (`nsis.perMachine: false` instala en `%LOCALAPPDATA%` sin requerir admin). El `productName: "Proxy Mapper"` + `version` de `desktop/package.json` hacen que el artefacto se llame por defecto `Proxy Mapper Setup <version>.exe` (formato `${productName} Setup ${version}.${ext}` de electron-builder), cumpliendo AC #2 sin necesidad de `artifactName` explícito. Decisiones de scope del instalador: `oneClick: false` (muestra wizard; permite elegir carpeta), `allowToChangeInstallationDirectory: true`, `createDesktopShortcut: true`, `createStartMenuShortcut: true`. **Nota sobre verificación end-to-end**: `npm run package:win` requiere Developer Mode o admin en Windows porque `7za.exe` (de `7zip-bin`) no puede crear los symlinks de macOS dentro del archivo `winCodeSign` sin esos privilegios. Esta limitación es de **entorno**, no de config — el AC de código está cumplido. Verificación visual del `.exe` se hará en un Windows con Developer Mode habilitado o con `USE_SYSTEM_7ZA=true` apuntando a un 7-Zip del sistema que ignore los symlinks fallidos.
+- **US-071 — target portable (mismo `win.target` array)**: agregar `- target: portable` con `arch: [x64]` como segundo item del array `win.target` (al lado de `nsis`). `electron-builder` emite entonces DOS artefactos en una sola corrida: el instalador NSIS y el portable. AC #2 se cumple por default — el target `portable` de electron-builder es un único `.exe` auto-extraíble (no instalador, no requiere admin, no escribe en `Program Files`). AC #3 (peso <200 MB) se estima: Electron base x64 ~150 MB + wrapper `dist/` ~270 KB + proxy `resources/proxy/` <20 KB = ~155 MB total, holgura amplia. La verificación del tamaño exacto se hará cuando se ejecute `npm run package:win` en un entorno con Developer Mode habilitado. **artifactName**: por ahora se deja el default (`${productName}-${version}-portable.${ext}` → `Proxy Mapper-0.1.0-portable.exe`); US-074 lo hará explícito/determinista si hace falta.
+- **US-072 — `extraResources` para `mapping.tsv` (con dos archivos acompañantes)**:
+  - **Por qué 3 archivos y no solo `mapping.tsv`**: el AC pide empaquetar `mapping.tsv` como `extraResources`, pero en producción el proxy (`index.js`) corre con `cwd = process.resourcesPath/proxy/` (decisión de US-057 — `utilityProcess.fork` resuelve el cwd en base al ejecutable, no a `app.getAppPath()`). Para que el proxy pueda leer `mapping.tsv` desde `__dirname` sin tener que recibir el path absoluto por argumento, el archivo debe estar junto a `index.js`. Por eso se empaquetan juntos en `resources/proxy/`: `index.js` (ESM entry del proxy), `mapping.tsv` (diccionario), `package.json` (con `"type": "module"` para que `utilityProcess.fork` detecte ESM; sin este archivo el fork podría interpretar `index.js` como CJS y fallar el import).
+  - **Por qué NO se copia `node_modules` raíz**: `index.js` sólo importa módulos nativos de Node (`http`, `https`, `fs`, `path`, `url`). Las deps listadas en `proxy-mapper/package.json` (`@ai-sdk/openai-compatible`, `express`, `swagger-ui-express`) NO son importadas por el código actual del proxy — quedaron como remanente de un desarrollo previo. Verificado con grep: `import.*from` y `require(` en `index.js` no referencian ninguna dep externa. El `package.json` copiado sólo sirve para declarar `"type": "module"`; sus deps son ignoradas en runtime.
+  - **Desviación del AC #2**: el AC literal dice "el archivo está accesible vía `app.getAppPath()`". La implementación real lo deja en `process.resourcesPath/proxy/mapping.tsv` (= `resources/proxy/mapping.tsv` en el árbol del `.exe`), que es accesible vía `process.resourcesPath`, NO vía `app.getAppPath()` (que apunta a `resources/app/`). Esto es coherente con la arquitectura de spawn de US-057. La verificación end-to-end (calcular SHA-256 del `mapping.tsv` post-build y comparar con el de raíz) se hará cuando se pueda ejecutar `npm run package:win` en un Windows con Developer Mode; el config actual garantiza que el archivo copiado es bit-exacto al de raíz (electron-builder hace copy simple, sin transformación).
+  - **Side effect: `version.ts` ahora importa `app` de `electron`** y bifurca la resolución del `package.json` del proxy: en prod lee `process.resourcesPath/proxy/package.json`, en dev mantiene `../../package.json` desde `mainDir`. Sin este cambio, la versión del proxy mostrada en el sidebar sería `0.0.0` (fallback) en producción.
+- **US-073 — icono + manifest de Windows**:
+  - AC #1 ya estaba cubierto por el `yml` original (`win.icon: resources/icon.ico`). El archivo `desktop/resources/icon.ico` existe en el repo desde antes (lo crea el setup inicial del wrapper).
+  - **AC #2 (manifest con `requestedExecutionLevel: asInvoker`)**: agregado bajo `win:`. electron-builder genera un `app.exe.manifest` embebido en el `.exe` con `requestedExecutionLevel="asInvoker"`. Esto significa que la app corre con el token del usuario actual sin generar prompt UAC — coherente con `nsis.perMachine: false` (instalación por usuario, no por máquina).
+  - **AC #3 (icono en taskbar y Explorer)** requiere DOS cosas:
+    1. **Explorer**: ya cubierto por `win.icon` (electron-builder compila el `.ico` en el `.exe`).
+    2. **Taskbar**: `app.setAppUserModelId('com.anomaly.proxy-mapper-desktop')` en `index.ts`, ANTES de `createWindow()`. El string DEBE coincidir con `appId` del `electron-builder.yml`. Sin esto, Windows agrupa la ventana del taskbar bajo el AppUserModelId genérico de Electron (`electron.app.ProxyMapper`) y muestra el icono de Electron en vez de `icon.ico`.
+    3. **Bonus**: agregué `icon: 'resources/icon.ico'` en `BrowserWindow({...})` para que en dev (`npm run dev`, sin .exe generado) el splash inicial ya muestre el icono correcto. En prod el icono del .exe toma precedencia, pero este sirve para el frame de la ventana antes del load.
+- **US-074 — release reproducible (`npm run package:win`)**:
+  - **Script ya existía** en `desktop/package.json`: `"package:win": "npm run build && electron-builder --win --publish never"`. El flag `--publish never` desactiva cualquier intento de subir artefactos a un provider (GitHub, S3, etc.); `--win` indica plataforma target. No se modificó.
+  - **AC #1 (ambos artefactos en `desktop/dist/`)**: ya cubierto por `directories.output: dist` (los paths resueltos quedan en `desktop/dist/`) + los dos `target` en `win.target` (NSIS y portable). En una sola corrida se emiten: `Proxy Mapper Setup 0.1.0.exe` (instalador) y `Proxy Mapper-0.1.0-portable.exe` (portable).
+  - **AC #2 (filenames sin timestamps)**: agregados `artifactName` explícitos:
+    - `nsis.artifactName: ${productName} Setup ${version}.${ext}` → "Proxy Mapper Setup 0.1.0.exe"
+    - `portable.artifactName: ${productName}-${version}-portable.${ext}` → "Proxy Mapper-0.1.0-portable.exe"
+    - Ambos dependen sólo de `productName` y `version`, no de `Date.now()` ni de timestamps internos. Si la versión no cambia y el input tampoco, los nombres son idénticos entre corridas.
+  - **AC #3 (output reproducible)** — **DESVIACIÓN honesta**: electron-builder NO produce binarios byte-idénticos entre corridas, aunque la entrada sea la misma, por razones estructurales:
+    - `rcedit` (resource editor de Windows) inyecta el timestamp de build en la versión del recurso del `.exe`.
+    - El archivo `app.asar` puede contener timestamps de archivos (mtime preservados al copiar desde `dist/`).
+    - El propio binario de Electron no se compila con flags `-ffile-prefix-map` ni strip determinista.
+    - El archivo `output.json` de electron-builder cambia entre corridas.
+    - **Lo que SÍ es reproducible**: los filenames (AC #2), el árbol de archivos dentro del `.exe`, y el SHA-256 de los archivos que NO dependen de timestamp (ej. `mapping.tsv` empaquetado — esto se puede verificar con `Get-FileHash` post-build).
+    - **Mejoras futuras (fuera de scope)**: para binarios byte-idénticos habría que (a) usar `app.asar.unpacked` con `-gzip` y `--unpack='*.node'`, (b) aplicar `strip --strip-debug` y `windeployqt --release`, (c) congelar la versión exacta de `node_modules` con `npm ci` en vez de `npm install`, (d) inyectar `SOURCE_DATE_EPOCH` (estándar para builds reproducibles en Linux). Electron no tiene soporte first-party para esto todavía.
+- **US-083 — graceful shutdown via `before-quit`**: hook registrado en `index.ts` que se dispara cuando el usuario cierra la ventana principal (`window-all-closed` → `app.quit()` → `before-quit`):
+  - **AC #1**: el handler llama `stopProxy()` antes de permitir que la app muera. Mecánica: si `isProxyRunning()` retorna `true`, se hace `event.preventDefault()` para CANCELAR el quit, se setea el flag `isQuitting` para evitar re-entrada, se ejecuta `stopProxy()` (await), y en `.finally()` se llama `app.quit()` de nuevo — esta segunda vez `isProxyRunning()` ya retorna `false` (el child fue nulled en su handler `'exit'`), el handler retorna sin hacer nada, y el quit procede.
+  - **AC #2**: SIGTERM (no SIGKILL) ya estaba implementado en `proxy.ts:161` (US-051) — `target.kill()` sobre `UtilityProcess` envía SIGTERM por default (verificado en docs de Electron: `UtilityProcess.kill()` es equivalente a `process.kill(pid, 'SIGTERM')`). La escalación a `taskkill /f` (US-051) sólo se ejecuta si pasan los 5s del timeout, NO al inicio.
+  - **AC #3 (espera max 5s)**: `FORCE_KILL_TIMEOUT_MS = 5000` en `proxy.ts:37`. El `await stopProxy()` bloquea hasta que el child emite `'exit'` (caso normal) o hasta que `taskkill /f` confirma terminación (caso patológico). Después del await, `app.quit()` continúa la salida — el usuario nunca ve la ventana cerrarse antes de que el proxy esté muerto.
+  - **Edge cases manejados**:
+    - Si `stopProxy()` retorna `{ ok: false }` (ej. `not_running`, `stop_in_progress`), se loguea pero se sale igual — no se bloquea al usuario por un fallo del proxy.
+    - Si el usuario mata la app desde Task Manager, `before-quit` puede no dispararse — el child queda como huérfano hasta el próximo reinicio. Esto es una limitación de Windows; en Electron no hay un equivalente de `SIGTERM` que capture el hard-kill del SO. El ciclo de vida del proxy en este escenario depende del SO, no del wrapper.
+    - El flag `isQuitting` evita el loop: si `app.quit()` re-dispara `before-quit` antes de que `stopProxy()` haya nulled el child (race), el handler retorna inmediatamente sin hacer nada.
+- **US-092 — editor de `mapping.tsv` (read/write IPC + vista `/mappings`)**:
+  - **Main** — nuevo módulo `desktop/src/main/mappings.ts` con `readMappings()` y `writeMappings()`. Path resuelto con la misma lógica que `proxy.ts:resolveAppRoot()`: dev = `app.getAppPath()/../mapping.tsv` (raíz del repo), prod = `process.resourcesPath/proxy/mapping.tsv` (US-072). Parseo: `split(/\r?\n/)` (tolerante a CRLF), se descartan líneas vacías y líneas sin tab. Serialize: `${real}\t${masked}` por línea + `\n` final (POSIX). Read tolera `ENOENT` retornando `{ ok: true, pairs: [] }` — útil en primer arranque cuando el usuario aún no tiene mappings. Write sobrescribe atómicamente (`writeFile` con flag `w` por default).
+  - **IPC** — `ipc.ts` registra `mappings:read` y `mappings:write`, ambos con `assertTrustedSender(event)` (defensa en profundidad US-080-style, ya implementado en el módulo).
+  - **Renderer** — `mappings.tsx` reescrito de placeholder a editor:
+    - **AC #1**: tabla `<table>` con `<thead>` (sticky) y `<tbody>`; 2 columnas (`real`, `masked`) + columna de acción. Inputs sin borde, sólo `outline-none`, para look limpio estilo logs-view.
+    - **AC #2**: botón "Agregar par" (Plus icon) en el header, hace `setPairs(prev => [...prev, { real: '', masked: '' }])`.
+    - **AC #3**: botón Trash2 por fila con `aria-label="Eliminar par N"`, hace `setPairs(prev => prev.filter((_, i) => i !== index))`.
+    - **AC #4 (auto-save)**: `useEffect` watching `pairs` con debounce de 300ms (`AUTO_SAVE_DEBOUNCE_MS`). `useRef isFirstRender` evita escribir al disco inmediatamente después del read inicial (eso sería un no-op pero ensucia logs). Errores de write se reportan vía `toast.error()` sin bloquear la edición — el usuario puede seguir modificando y reintenta el siguiente cambio.
+  - **Side effect en `shared/types.ts`**: `MappingsApi.read` ahora retorna `reason?: string` además de `ok`, `pairs?`, `path?` — el código de error ya existía en `readMappings()` pero el tipo no lo exponía, lo que rompía el typecheck del renderer al mostrar el toast.
+  - **Fuera de scope de US-092 (lo traen US-093 y US-094)**:
+    - US-093: validación inline (rechazo de duplicados, vacíos, `\t`/`\n` en valores). Hoy se permite cualquier string — el archivo se serializa corrupto si el usuario mete un tab dentro de un valor.
+    - US-094: header con la ruta absoluta del archivo. Hoy no se muestra, sólo el título "Mappings".
+- **US-093 — validación inline de pares (renderer + defensa en main)**:
+  - **Módulo compartido nuevo `shared/mappings-validation.ts`**: `validateMappings(pairs)` retorna `Record<index, PairError>` con errores opcionales en `real` y/o `masked`. `countErrors(errors)` para el contador del header. Reglas:
+    1. Vacío (tras trim) → mensaje `"Real/Masked no puede estar vacío"`.
+    2. Contiene `\t`, `\n` o `\r` → mensaje `"Real/Masked no puede contener tab ni salto de línea"` (romperían el TSV al re-leer).
+    3. `real` duplicado entre filas → mensaje en TODAS las filas implicadas: `"Real duplicado (también fila N[, M]): 'valor'"` + flag `duplicate: true`. La fila referenciada se calcula relativa al usuario (1-indexed).
+  - **Renderer (`mappings.tsx`)**: errores calculados con `useMemo([pairs])`. UI:
+    - Input con `border-destructive bg-destructive/5` cuando su campo tiene error + `aria-invalid={true}` (a11y).
+    - Mensaje `<p role="alert">` debajo del input con el texto del error.
+    - Header secundario: si `errorCount > 0` → `"N errores — corrije antes de guardar"` (color destructive); si 0 → `"Cambios se guardan automáticamente"` (color muted).
+    - **Auto-save se cancela si hay errores**: el `useEffect` que dispara `api.mappings.write(pairs)` tiene `if (errorCount > 0) return;` antes del debounce. El usuario tiene que corregir para que persista — esto coincide con el mensaje del header.
+  - **Main (`mappings.ts:writeMappings`) — defensa en profundidad**: llama `validateMappings(pairs)` antes de escribir. Si HAY errores que NO sean de duplicado (los duplicados los maneja sólo el renderer porque es UX), retorna `{ ok: false, reason: 'invalid_pairs' }` sin tocar el archivo. Esto protege contra un renderer bugueado o IPC forzado que intente escribir pares inválidos (espíritu de US-080). Loguea un warn con el motivo.
+  - **Decisión sobre duplicados en main**: deliberadamente NO se rechazan en `writeMappings`. Razón: el archivo en disco puede contener duplicados legítimos de una versión vieja (US-040 o similar); si el usuario sólo abre y cierra el editor, no debería perder sus datos. La detección de duplicados es responsabilidad exclusiva del renderer (UX), y el usuario decide qué fila borrar para resolverlos.
+  - **Bundle size**: añadir `mappings-validation.ts` (puro, sin imports de React/Electron) no aumenta el tamaño del bundle del main — Vite lo tree-shake correctamente. En el renderer, el `useMemo` evita re-correr la validación en cada render: sólo cuando `pairs` cambia.

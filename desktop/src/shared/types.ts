@@ -26,13 +26,13 @@ export interface ProxyApi {
 
 export interface LogsApi {
   onAppend: (cb: (entry: LogEntry) => void) => () => void;
+  read: () => Promise<LogEntry[]>;
   clear: () => Promise<{ ok: boolean }>;
-  save: () => Promise<{ ok: boolean; path?: string }>;
-  copy: () => Promise<{ ok: boolean }>;
+  save: () => Promise<{ ok: boolean; path?: string; reason?: string }>;
 }
 
 export interface MappingsApi {
-  read: () => Promise<{ ok: boolean; pairs?: MappingPair[]; path?: string }>;
+  read: () => Promise<{ ok: boolean; pairs?: MappingPair[]; path?: string; reason?: string }>;
   write: (pairs: MappingPair[]) => Promise<{ ok: boolean; reason?: string }>;
 }
 

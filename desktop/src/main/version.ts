@@ -1,15 +1,26 @@
 /**
  * version.ts - Lee versiones de los `package.json` del wrapper y del proxy.
  *
- * Estructura de paths (resueltos en runtime):
- *   - Wrapper:  `dist/main/index.js` → `../package.json` (desktop/package.json)
- *   - Proxy:    `dist/main/index.js` → `../../package.json` (raíz del proyecto)
+ * Estructura de paths por entorno (US-072):
+ *
+ *   Dev:
+ *     - mainDir       = `desktop/dist/main/`
+ *     - wrapper pkg   = `desktop/dist/main/../package.json` = `desktop/package.json`
+ *     - proxy pkg     = `desktop/dist/main/../../package.json` = raíz del repo
+ *
+ *   Prod (US-072):
+ *     - mainDir       = `resources/app/dist/main/`
+ *     - wrapper pkg   = `resources/app/dist/main/../package.json`
+ *                       = `resources/app/package.json` (incluido en app.asar)
+ *     - proxy pkg     = `process.resourcesPath/proxy/package.json`
+ *                       (copiado vía extraResources; vive fuera de app.asar)
  *
  * Si un archivo no se puede leer o parsear, se devuelve '0.0.0' como fallback
  * (en vez de fallar el IPC y romper la UI del sidebar).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { app } from 'electron';
 
 const FALLBACK_VERSION = '0.0.0';
 
@@ -27,7 +38,13 @@ const readPackageVersion = (pkgPath: string): string => {
   }
 };
 
-export const readVersions = (mainDir: string): { wrapper: string; proxy: string } => ({
-  wrapper: readPackageVersion(join(mainDir, '../package.json')),
-  proxy: readPackageVersion(join(mainDir, '../../package.json')),
-});
+export const readVersions = (mainDir: string): { wrapper: string; proxy: string } => {
+  const wrapperPath = join(mainDir, '../package.json');
+  const proxyPath = app.isPackaged
+    ? join(process.resourcesPath, 'proxy', 'package.json')
+    : join(mainDir, '../../package.json');
+  return {
+    wrapper: readPackageVersion(wrapperPath),
+    proxy: readPackageVersion(proxyPath),
+  };
+};

@@ -21,9 +21,9 @@ const api: Api = {
         ipcRenderer.removeListener('logs:append', listener);
       };
     },
+    read: () => ipcRenderer.invoke('logs:read'),
     clear: () => ipcRenderer.invoke('logs:clear'),
     save: () => ipcRenderer.invoke('logs:save'),
-    copy: () => ipcRenderer.invoke('logs:copy'),
   },
   mappings: {
     read: () => ipcRenderer.invoke('mappings:read'),

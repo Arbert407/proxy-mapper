@@ -12,8 +12,17 @@ const MAX_BUFFER = 5000;
 
 const buffer: LogEntry[] = [];
 
-export function getLogsBuffer(): readonly LogEntry[] {
-  return buffer;
+/**
+ * Devuelve un snapshot del buffer FIFO actual (copia superficial).
+ *
+ * Copia y no referencia para que (a) la IPC structured clone reciba un valor
+ * estable aunque un `appendLogLine` corra durante el dispatch y (b) el tipo
+ * de retorno sea mutable (`LogEntry[]`), compatible con el handler `logs:read`.
+ * Costo: ~50 KB y <1 ms para 5000 entries — aceptable porque se invoca al
+ * mount del visor y al Guardar, no en hot path.
+ */
+export function getLogsBuffer(): LogEntry[] {
+  return buffer.slice();
 }
 
 export function clearLogsBuffer(): void {
