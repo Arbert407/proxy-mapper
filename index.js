@@ -461,6 +461,11 @@ const transformRequestBody = (body) => {
           return part;
         });
       }
+      // CASE 3: Single content object (no array). Some clients send
+      // `{type: "text", text: "..."}` directly as `content` (no array).
+      else if (newMsg.content && typeof newMsg.content === 'object') {
+        newMsg.content = toLLMDeep(newMsg.content);
+      }
 
       // Transform 'name' field (used in tool role messages to identify the tool)
       if (typeof newMsg.name === 'string') {
@@ -471,6 +476,22 @@ const transformRequestBody = (body) => {
       // IDs may contain user-side identifiers if the LLM echoes them back
       if (typeof newMsg.tool_call_id === 'string') {
         newMsg.tool_call_id = toLLM(newMsg.tool_call_id);
+      }
+
+      // Transform 'refusal' (assistant text refusing the request, e.g. safety)
+      if (typeof newMsg.refusal === 'string') {
+        newMsg.refusal = toLLM(newMsg.refusal);
+      }
+
+      // Transform 'reasoning_content' (history from previous turns that used thinking)
+      if (typeof newMsg.reasoning_content === 'string') {
+        newMsg.reasoning_content = toLLM(newMsg.reasoning_content);
+      }
+
+      // Transform 'audio' (assistant audio output transcript). Deep transform por si trae
+      // campos string anidados (transcript, voice, format.id, etc.)
+      if (newMsg.audio && typeof newMsg.audio === 'object') {
+        newMsg.audio = toLLMDeep(newMsg.audio);
       }
 
       // Transform previous tool_calls in assistant messages (conversation history)
@@ -484,8 +505,8 @@ const transformRequestBody = (body) => {
             ...tc.function,
             // Transform function name (e.g., "write_FILE_SECOJB" -> "write_FILE_SJBDR")
             name: typeof tc.function.name === 'string' ? toLLM(tc.function.name) : tc.function.name,
-            // Transform arguments (JSON string that may contain user-side identifiers)
-            arguments: typeof tc.function.arguments === 'string' ? toLLM(tc.function.arguments) : tc.function.arguments
+            // Transform arguments (string OR object — antes solo string, objetos leakaban)
+            arguments: transformArguments(tc.function.arguments)
           } : tc.function
         }));
       }
@@ -495,7 +516,7 @@ const transformRequestBody = (body) => {
         newMsg.function_call = {
           ...newMsg.function_call,
           name: typeof newMsg.function_call.name === 'string' ? toLLM(newMsg.function_call.name) : newMsg.function_call.name,
-          arguments: typeof newMsg.function_call.arguments === 'string' ? toLLM(newMsg.function_call.arguments) : newMsg.function_call.arguments
+          arguments: transformArguments(newMsg.function_call.arguments)
         };
       }
 
@@ -516,7 +537,11 @@ const transformRequestBody = (body) => {
           // Transform function name (in case it's a custom tool with user-side naming)
           name: typeof t.function.name === 'string' ? toLLM(t.function.name) : t.function.name,
           // Transform description (may mention user-side identifiers in examples)
-          description: typeof t.function.description === 'string' ? toLLM(t.function.description) : t.function.description
+          description: typeof t.function.description === 'string' ? toLLM(t.function.description) : t.function.description,
+          // Transform parameters schema deep (property descriptions y ejemplos pueden contener IDs)
+          parameters: t.function.parameters && typeof t.function.parameters === 'object'
+            ? toLLMDeep(t.function.parameters)
+            : t.function.parameters
         }
       };
     });
@@ -537,25 +562,25 @@ const transformRequestBody = (body) => {
  * @param {*} value - Any value: string, number, array, object, null, boolean
  * @returns {*} - The same structure with all strings transformed via fromLLM
  *
- * Example input (with mapping {"SJBDR": "SECOJB"}):
- *   {
- *     path: "SJBDR.cs",
- *     options: {
- *       encoding: "utf8",
- *       flags: ["SJBDR", "QWER"]
- *     },
- *     count: 42
- *   }
+ * Example input:
+ * {
+ *   path: "SJBDR.cs",
+ *   options: {
+ *     encoding: "utf8",
+ *     flags: ["SJBDR", "QWER"]
+ *   },
+ *   count: 42
+ * }
  *
  * Example output:
- *   {
- *     path: "SECOJB.cs",
- *     options: {
- *       encoding: "utf8",
- *       flags: ["SECOJB", "QWER"]
- *     },
- *     count: 42
- *   }
+ * {
+ *   path: "SECOJB.cs",
+ *   options: {
+ *     encoding: "utf8",
+ *     flags: ["SECOJB", "QWER"]
+ *   },
+ *   count: 42
+ * }
  *
  * Note: Non-string primitives (numbers, booleans, null) are returned unchanged.
  * Only string values are transformed via fromLLM.
@@ -579,6 +604,42 @@ const transformValueDeep = (value) => {
   }
   // PRIMITIVE: Numbers, booleans, null, undefined pass through unchanged
   return value;
+};
+
+/**
+ * Same recursion as `transformValueDeep` pero aplica `toLLM` (user → LLM).
+ * Necesario cuando tool_call `arguments` llega como objeto ya parseado
+ * (no como JSON string) — antes pasaba sin transformar causando leaks.
+ *
+ * @param {*} value - Any value: string, number, array, object, null, boolean
+ * @returns {*} - The same structure with all strings transformed via toLLM
+ */
+const toLLMDeep = (value) => {
+  if (typeof value === 'string') {
+    return toLLM(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => toLLMDeep(item));
+  }
+  if (typeof value === 'object' && value !== null) {
+    const result = {};
+    for (const key of Object.keys(value)) {
+      result[key] = toLLMDeep(value[key]);
+    }
+    return result;
+  }
+  return value;
+};
+
+/**
+ * Normaliza `arguments` (tool_call o function_call legacy) a string JSON.
+ * Si ya es string → aplica toLLM directo. Si es objeto → toLLMDeep + stringify.
+ * Otros tipos (null, undefined, primitives) pasan sin cambios.
+ */
+const transformArguments = (args) => {
+  if (typeof args === 'string') return toLLM(args);
+  if (args && typeof args === 'object') return JSON.stringify(toLLMDeep(args));
+  return args;
 };
 
 // ============================================================================
