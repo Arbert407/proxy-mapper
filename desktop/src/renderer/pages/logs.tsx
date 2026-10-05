@@ -6,6 +6,7 @@ import { FlowView } from '@/components/flow-view';
 import { Button } from '@/components/ui/button';
 import { useFlowEvents } from '@/hooks/use-flow-events';
 import { useLogsStream } from '@/hooks/use-logs-stream';
+import { useMappings } from '@/hooks/use-mappings';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import type { LogEntry, LogLevel } from '@shared/types';
@@ -267,6 +268,7 @@ export const LogsPage = () => {
   const [mode, setMode] = useState<ViewMode>('logs');
   const [filter, setFilter] = useState('');
   const flowEvents = useFlowEvents(entries, MAX_FLOW_EVENTS);
+  const mappings = useMappings();
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -288,7 +290,7 @@ export const LogsPage = () => {
         <LogsList entries={entries} filter={filter} />
       ) : (
         <ErrorBoundary fallback={<FlowFallback />}>
-          <FlowView events={flowEvents} />
+          <FlowView events={flowEvents} mappings={mappings} />
         </ErrorBoundary>
       )}
     </div>

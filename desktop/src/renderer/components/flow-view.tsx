@@ -11,12 +11,13 @@
  * Si hay multiples round-trips, se apilan horizontalmente (scroll horizontal).
  */
 import { Cloud, User } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { ProxyFlowEvent } from '@shared/types';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { MappingPair, ProxyFlowEvent } from '@shared/types';
 import { cn } from '@/lib/utils';
 
 interface FlowViewProps {
   events: readonly ProxyFlowEvent[];
+  mappings: readonly MappingPair[];
 }
 
 const COLOR_REAL = 'text-emerald-400';
@@ -24,14 +25,40 @@ const COLOR_MASKED = 'text-amber-400';
 const CARD_BG = 'bg-slate-900';
 const CARD_BORDER = 'border-slate-700';
 
+const escapeRegExp = (s: string): string =>
+  s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Devuelve los tokens de `tokens` que aparecen en `text`, en orden de
+ * aparición, joined por " ... ". Si no hay matches, string vacío.
+ * Tokens más largos van primero en la regex para evitar prefijos
+ * spurios (ej: "AB" matchea antes que "ABC" si están los dos).
+ */
+const extractOccurrences = (text: string, tokens: readonly string[]): string => {
+  if (!text || tokens.length === 0) return '';
+  const sorted = [...new Set(tokens)].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(sorted.map(escapeRegExp).join('|'), 'g');
+  const matches = text.match(pattern);
+  if (!matches || matches.length === 0) return '';
+  return matches.join(' ... ');
+};
+
 interface CardProps {
   index: number;
   snippets: string[];
   tone: 'real' | 'masked';
+  tokens: readonly string[];
 }
 
-const FlowCard = ({ index, snippets, tone }: CardProps) => {
+const FlowCard = ({ index, snippets, tone, tokens }: CardProps) => {
   const safeSnippets = Array.isArray(snippets) ? snippets : [];
+  const rows = useMemo(() => {
+    if (tokens.length === 0) return [];
+    return safeSnippets
+      .map((s) => extractOccurrences(s, tokens))
+      .filter((s) => s.length > 0);
+  }, [safeSnippets, tokens]);
+
   return (
     <div
       className={cn(
@@ -44,15 +71,15 @@ const FlowCard = ({ index, snippets, tone }: CardProps) => {
       <span className="absolute top-1 left-1.5 text-[10px] font-mono text-slate-500 select-none">
         {index}
       </span>
-      {safeSnippets.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="font-mono text-xs italic pt-3 pr-1 text-slate-600">
-          (sin contenido)
+          (sin coincidencias)
         </p>
       ) : (
         <ul className="flex flex-col gap-0.5 pt-3 pr-1 list-none">
-          {safeSnippets.map((s, i) => (
+          {rows.map((s, i) => (
             <li key={i} className="font-mono text-xs leading-snug break-words">
-              {s}
+              … {s} …
             </li>
           ))}
         </ul>
@@ -77,10 +104,14 @@ const Llm = () => (
 
 interface FlowDiagramProps {
   event: ProxyFlowEvent;
+  mappings: readonly MappingPair[];
 }
 
-const FlowDiagram = ({ event }: FlowDiagramProps) => {
+const FlowDiagram = ({ event, mappings }: FlowDiagramProps) => {
   const safeEvent = event && typeof event === 'object' ? event : null;
+  const realTokens = useMemo(() => mappings.map((m) => m.real), [mappings]);
+  const maskedTokens = useMemo(() => mappings.map((m) => m.masked), [mappings]);
+
   if (!safeEvent) {
     return (
       <div className="text-slate-600 text-xs font-mono p-4">
@@ -90,16 +121,25 @@ const FlowDiagram = ({ event }: FlowDiagramProps) => {
   }
   return (
     <div className="flex flex-col items-stretch shrink-0">
-      {/* Header: Actor + top row (cards 1 + 2) + LLM */}
       <div className="flex items-start gap-4">
         <div className="flex flex-col items-center gap-2 pt-1">
           <Actor />
         </div>
         <div className="flex flex-col gap-3 flex-1">
           <div className="flex items-center gap-3">
-            <FlowCard index={1} snippets={safeEvent.requestRaw} tone="real" />
+            <FlowCard
+              index={1}
+              snippets={safeEvent.requestRaw}
+              tone="real"
+              tokens={realTokens}
+            />
             <span className="text-slate-600 text-lg leading-none mt-2 shrink-0">→</span>
-            <FlowCard index={2} snippets={safeEvent.requestMapped} tone="masked" />
+            <FlowCard
+              index={2}
+              snippets={safeEvent.requestMapped}
+              tone="masked"
+              tokens={maskedTokens}
+            />
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-slate-600">
@@ -117,16 +157,25 @@ const FlowDiagram = ({ event }: FlowDiagramProps) => {
         </div>
       </div>
 
-      {/* Footer: bottom row (cards 4 + 3) */}
       <div className="flex items-start gap-4 mt-4">
         <div className="flex flex-col items-center gap-2 pt-1">
           <Actor />
         </div>
         <div className="flex flex-col gap-3 flex-1">
           <div className="flex items-center gap-3">
-            <FlowCard index={4} snippets={safeEvent.responseUnmapped} tone="real" />
+            <FlowCard
+              index={4}
+              snippets={safeEvent.responseUnmapped}
+              tone="real"
+              tokens={realTokens}
+            />
             <span className="text-slate-600 text-lg leading-none mt-2 shrink-0">←</span>
-            <FlowCard index={3} snippets={safeEvent.responseRaw} tone="masked" />
+            <FlowCard
+              index={3}
+              snippets={safeEvent.responseRaw}
+              tone="masked"
+              tokens={maskedTokens}
+            />
           </div>
           <div className="flex items-center gap-2 text-slate-600">
             <span className="text-xs uppercase tracking-wider">LLM</span>
@@ -150,7 +199,7 @@ const EmptyState = () => (
   </div>
 );
 
-export const FlowView = ({ events }: FlowViewProps) => {
+export const FlowView = ({ events, mappings }: FlowViewProps) => {
   const [pulseId, setPulseId] = useState<string | null>(null);
   const lastIdRef = useRef<string | null>(null);
 
@@ -198,7 +247,7 @@ export const FlowView = ({ events }: FlowViewProps) => {
               </span>
               <span className="text-[10px] font-mono text-slate-500">{event.timestamp}</span>
             </div>
-            <FlowDiagram event={event} />
+            <FlowDiagram event={event} mappings={mappings} />
             {idx < reversed.length - 1 && (
               <div className="border-t border-slate-800 mt-4" aria-hidden="true" />
             )}
