@@ -104,6 +104,26 @@ export const PowerButton = ({ state, onToggle }: PowerButtonProps) => {
 
 ---
 
+## Build y Distribución
+
+El wrapper Electron se construye desde `desktop/`:
+
+```bash
+cd desktop
+npm run dev          # desarrollo con HMR
+npm run build        # compila TypeScript + Vite (producción)
+npm run package:win  # genera .exe en release/
+```
+
+Artefactos generados en `desktop/release/`:
+- `win-unpacked/electron.exe` — portable (directorio, para testing)
+- `win-unpacked/resources/app.asar` — app empaquetada
+- `Proxy Mapper Setup X.X.X.exe` — instalador NSIS (cuando termine)
+
+**Nota**: el build config vive en `desktop/electron-builder.yml` (no en `package.json`). El script `package:win` usa `electron-builder --win --publish never`.
+
+---
+
 ## Skills loaded
 
 Este agente tiene disponible la skill **`customize-opencode`** para configuración interna de opencode. **No la uses para código de aplicación** del wrapper.

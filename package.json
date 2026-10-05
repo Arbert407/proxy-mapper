@@ -2,9 +2,15 @@
   "name": "proxy-mapper",
   "version": "1.0.0",
   "type": "module",
+  "description": "HTTP proxy that maps confidential data to MiniMax API",
+  "author": "Proxy Mapper Team",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "app:dir": "electron-builder --dir",
+    "app:dist": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^1.0.0",
@@ -12,6 +18,20 @@
     "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "nodemon": "^3.1.14"
+  },
+  "build": {
+    "appId": "com.proxymapper.app",
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }

@@ -56,8 +56,8 @@ function createWindow(): void {
     },
   });
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL']);
+  if (process.env['VITE_DEV_SERVER_URL']) {
+    win.loadURL(process.env['VITE_DEV_SERVER_URL']);
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'));
   }

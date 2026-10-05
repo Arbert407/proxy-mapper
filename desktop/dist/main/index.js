@@ -466,8 +466,8 @@ function createWindow() {
       preload: node_path.join(__dirname, "../preload/index.js")
     }
   });
-  if (process.env["ELECTRON_RENDERER_URL"]) {
-    win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+  if (process.env["VITE_DEV_SERVER_URL"]) {
+    win.loadURL(process.env["VITE_DEV_SERVER_URL"]);
   } else {
     win.loadFile(node_path.join(__dirname, "../renderer/index.html"));
   }

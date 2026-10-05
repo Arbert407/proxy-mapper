@@ -9,7 +9,6 @@ import { LogsPage } from './pages/logs';
 import { AboutPage } from './pages/about';
 import { toast } from './lib/toast';
 import { useProxyState } from './hooks/use-proxy-state';
-import './styles/globals.css';
 
 const CRASH_AUTO_RESET_MS = 4000;
 

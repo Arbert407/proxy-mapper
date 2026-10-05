@@ -19,7 +19,7 @@
 ### Runtime / Shell / Routing
 | Paquete | Versión | Propósito |
 |---------|---------|-----------|
-| `electron` | ^31.0.0 | Runtime de escritorio; provee main + preload + renderer. |
+| `electron` | ^31.4.0 | Runtime de escritorio; provee main + preload + renderer. |
 | `react` | ^18.3.0 | UI del renderer. |
 | `react-dom` | ^18.3.0 | Mount point. |
 | `react-router-dom` | ^6.26.0 | Routing `/`, `/mappings`, `/logs`, `/about`. |
@@ -40,7 +40,7 @@
 |---------|---------|-----------|
 | `vite` | ^5.4.0 | Bundler del renderer. |
 | `vite-plugin-electron` | ^0.28.0 | Integra Vite con el main de Electron (HMR). |
-| `electron-builder` | ^24.13.0 | Empaqueta instalador NSIS y portable. |
+| `electron-builder` | ^26.15.3 | Empaqueta instalador NSIS y portable. |
 | `typescript` | ^5.5.0 | Compilador TS. |
 | `@vitejs/plugin-react` | ^4.3.0 | Plugin React para Vite. |
 | `@types/react`, `@types/react-dom` | latest | Tipos. |
@@ -113,7 +113,7 @@ proxy-mapper/
 |   |   |-- icon.ico           #   - icono de la ventana y del .exe
 |   |   \-- mapping.tsv        #   - copia sincronizada del raíz
 |   |
-|   \-- dist/                  #   - output de build (gitignored)
+|   \-- release/               #   - output de build (gitignored)
 |
 |-- AGENTS.md
 |-- ANALISIS.md
@@ -246,19 +246,19 @@ export const startProxy = async (cwd: string): Promise<StartResult> => {
     "tailwind-merge": "latest"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.0",
-    "vite": "^5.4.0",
-    "vite-plugin-electron": "^0.28.0",
-    "typescript": "^5.5.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "@types/node": "latest",
-    "tailwindcss": "^3.4.0",
-    "postcss": "latest",
-    "autoprefixer": "latest",
-    "tailwindcss-animate": "latest"
+    "electron": "^31.4.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^5.4.5",
+    "vite-plugin-electron": "^0.28.7",
+    "typescript": "^5.5.4",
+    "@vitejs/plugin-react": "^4.3.1",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/node": "^22.5.5",
+    "tailwindcss": "^3.4.10",
+    "postcss": "^8.4.45",
+    "autoprefixer": "^10.4.20",
+    "tailwindcss-animate": "^1.0.7"
   }
 }
 ```
