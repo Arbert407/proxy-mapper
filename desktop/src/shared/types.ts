@@ -18,6 +18,15 @@ export interface MappingPair {
   masked: string;
 }
 
+export interface ProxyFlowEvent {
+  id: string;
+  timestamp: string;
+  requestRaw: string[];
+  requestMapped: string[];
+  responseRaw: string[];
+  responseUnmapped: string[];
+}
+
 export interface ProxyApi {
   start: () => Promise<{ ok: boolean; reason?: string }>;
   stop: () => Promise<{ ok: boolean; reason?: string }>;

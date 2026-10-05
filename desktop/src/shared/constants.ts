@@ -11,4 +11,4 @@ export const PROXY_PORT = 45823;
  * cambiar aquí. Centralizado para que el footer del sidebar y la página
  * /about apunten al mismo lugar.
  */
-export const REPO_URL = 'https://github.com/anomaly/proxy-mapper';
+export const REPO_URL = 'https://github.com/Arbert407/proxy-mapper';
