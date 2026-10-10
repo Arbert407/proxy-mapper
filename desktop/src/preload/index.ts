@@ -28,6 +28,8 @@ const api: Api = {
   mappings: {
     read: () => ipcRenderer.invoke('mappings:read'),
     write: (pairs: MappingPair[]) => ipcRenderer.invoke('mappings:write', pairs),
+    export: (pairs: MappingPair[]) => ipcRenderer.invoke('mappings:export', pairs),
+    import: () => ipcRenderer.invoke('mappings:import'),
   },
   app: {
     getVersion: () => ipcRenderer.invoke('app:version'),

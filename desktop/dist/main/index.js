@@ -106,15 +106,83 @@ function appendLogLine(rawLine) {
   while (buffer.length > MAX_BUFFER) buffer.shift();
   emitLogAppend(entry);
 }
+function getUserDataProxyDir() {
+  return node_path.join(electron.app.getPath("userData"), "proxy");
+}
+function getBundleProxyDir() {
+  if (electron.app.isPackaged) {
+    return node_path.join(process.resourcesPath, "proxy");
+  }
+  return node_path.join(electron.app.getAppPath(), "..", "proxy");
+}
+async function fileExists(path) {
+  try {
+    await promises.access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function ensureUserDataProxy() {
+  const userDir = getUserDataProxyDir();
+  try {
+    await promises.mkdir(userDir, { recursive: true });
+    logger.info(`bootstrap: directorio de proxy en userData = ${userDir}`);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`bootstrap: no se pudo crear ${userDir}: ${reason}`);
+    throw err;
+  }
+  const bundleDir = getBundleProxyDir();
+  const filesToSync = [
+    { name: "index.js", mandatory: true },
+    { name: "package.json", mandatory: true }
+  ];
+  for (const { name, mandatory } of filesToSync) {
+    const src = node_path.join(bundleDir, name);
+    const dst = node_path.join(userDir, name);
+    try {
+      await promises.copyFile(src, dst);
+      logger.debug(`bootstrap: copiado ${src} -> ${dst}`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      if (mandatory) {
+        logger.error(`bootstrap: fallo al copiar ${name}: ${reason}`);
+        throw err;
+      }
+      logger.warn(`bootstrap: ${name} no se pudo copiar (${reason})`);
+    }
+  }
+  const mappingPath = node_path.join(userDir, "mapping.tsv");
+  if (!await fileExists(mappingPath)) {
+    const bundleMapping = node_path.join(bundleDir, "mapping.tsv");
+    try {
+      if (await fileExists(bundleMapping)) {
+        await promises.copyFile(bundleMapping, mappingPath);
+        logger.info(`bootstrap: mapping.tsv copiado desde bundle a ${mappingPath}`);
+      } else {
+        await promises.writeFile(mappingPath, "", "utf-8");
+        logger.info(`bootstrap: mapping.tsv vacio creado en ${mappingPath}`);
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`bootstrap: no se pudo crear mapping.tsv: ${reason}`);
+      throw err;
+    }
+  } else {
+    logger.debug(`bootstrap: mapping.tsv ya existe en ${mappingPath} (no se sobreescribe)`);
+  }
+  return userDir;
+}
 const FORCE_KILL_TIMEOUT_MS = 5e3;
 let child = null;
 let stopInProgress = false;
 function isProxyRunning() {
   return child !== null;
 }
-function resolveAppRoot() {
+async function resolveAppRoot() {
   if (electron.app.isPackaged) {
-    return node_path.join(process.resourcesPath, "proxy");
+    return ensureUserDataProxy();
   }
   return node_path.resolve(electron.app.getAppPath(), "..");
 }
@@ -139,7 +207,7 @@ async function startProxy() {
   if (child !== null || stopInProgress) {
     return { ok: false, reason: "already_running" };
   }
-  const appRoot = resolveAppRoot();
+  const appRoot = await resolveAppRoot();
   const entry = node_path.join(appRoot, "index.js");
   if (!node_fs.existsSync(entry)) {
     const reason = `index.js no encontrado en ${appRoot}`;
@@ -284,9 +352,10 @@ function validateMappings(pairs) {
   }
   return errors;
 }
+const EXPORT_FILENAME = "export_mappings_proxy_mapper.tsv";
 function resolveMappingPath() {
   if (electron.app.isPackaged) {
-    return node_path.join(process.resourcesPath, "proxy", "mapping.tsv");
+    return node_path.join(getUserDataProxyDir(), "mapping.tsv");
   }
   return node_path.join(electron.app.getAppPath(), "..", "mapping.tsv");
 }
@@ -344,6 +413,69 @@ async function writeMappings(pairs) {
     logger.error(`mappings.write: error al escribir ${path}: ${reason}`);
     return { ok: false, reason };
   }
+}
+async function exportMappingsToFile(win, pairs) {
+  const dlg = await electron.dialog.showSaveDialog(win, {
+    title: "Exportar mappings",
+    defaultPath: EXPORT_FILENAME,
+    filters: [
+      { name: "TSV (mappings)", extensions: ["tsv"] },
+      { name: "Todos los archivos", extensions: ["*"] }
+    ]
+  });
+  if (dlg.canceled || !dlg.filePath) {
+    logger.info("mappings.export: cancelado por el usuario");
+    return { ok: false, reason: "canceled" };
+  }
+  try {
+    await promises.writeFile(dlg.filePath, serializeTsv(pairs), "utf-8");
+    logger.info(`mappings.export: ${pairs.length} pares escritos en ${dlg.filePath}`);
+    return { ok: true, path: dlg.filePath };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`mappings.export: error al escribir ${dlg.filePath}: ${reason}`);
+    return { ok: false, reason };
+  }
+}
+async function importMappingsFromFile(win) {
+  const dlg = await electron.dialog.showOpenDialog(win, {
+    title: "Importar mappings",
+    properties: ["openFile"],
+    filters: [
+      { name: "TSV (mappings)", extensions: ["tsv"] },
+      { name: "Todos los archivos", extensions: ["*"] }
+    ]
+  });
+  if (dlg.canceled || dlg.filePaths.length === 0) {
+    logger.info("mappings.import: cancelado por el usuario");
+    return { ok: false, reason: "canceled" };
+  }
+  const filePath = dlg.filePaths[0];
+  let content;
+  try {
+    content = await promises.readFile(filePath, "utf-8");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`mappings.import: error al leer ${filePath}: ${reason}`);
+    return { ok: false, reason };
+  }
+  const allParsed = parseTsv(content);
+  const errors = validateMappings(allParsed);
+  const valid = [];
+  for (let i = 0; i < allParsed.length; i++) {
+    const err = errors[i];
+    if (!(err == null ? void 0 : err.real) && !(err == null ? void 0 : err.masked)) {
+      valid.push(allParsed[i]);
+    }
+  }
+  const skipped = allParsed.length - valid.length;
+  logger.info(
+    `mappings.import: ${valid.length} válidos, ${skipped} omitidos desde ${filePath}`
+  );
+  if (allParsed.length > 0 && valid.length === 0) {
+    return { ok: false, reason: "no_valid_pairs", path: filePath };
+  }
+  return { ok: true, pairs: valid, skipped, path: filePath };
 }
 function assertTrustedSender(event) {
   const win = electron.BrowserWindow.fromWebContents(event.sender);
@@ -411,6 +543,24 @@ function registerIpcHandlers() {
     assertTrustedSender(event);
     return writeMappings(pairs);
   });
+  electron.ipcMain.handle("mappings:export", async (event, pairs) => {
+    assertTrustedSender(event);
+    const win = electron.BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      logger.error("mappings:export: sin BrowserWindow padre para el diálogo");
+      return { ok: false, reason: "no_window" };
+    }
+    return exportMappingsToFile(win, pairs);
+  });
+  electron.ipcMain.handle("mappings:import", async (event) => {
+    assertTrustedSender(event);
+    const win = electron.BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      logger.error("mappings:import: sin BrowserWindow padre para el diálogo");
+      return { ok: false, reason: "no_window" };
+    }
+    return importMappingsFromFile(win);
+  });
 }
 const FALLBACK_VERSION = "0.0.0";
 const readPackageVersion = (pkgPath) => {
@@ -428,7 +578,7 @@ const readPackageVersion = (pkgPath) => {
 };
 const readVersions = (mainDir) => {
   const wrapperPath = node_path.join(mainDir, "../package.json");
-  const proxyPath = electron.app.isPackaged ? node_path.join(process.resourcesPath, "proxy", "package.json") : node_path.join(mainDir, "../../package.json");
+  const proxyPath = electron.app.isPackaged ? node_path.join(getUserDataProxyDir(), "package.json") : node_path.join(mainDir, "../../package.json");
   return {
     wrapper: readPackageVersion(wrapperPath),
     proxy: readPackageVersion(proxyPath)
@@ -477,6 +627,10 @@ electron.app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
   bindMainWindow();
+  void ensureUserDataProxy().catch((err) => {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`whenReady: bootstrap del proxy fallo: ${reason}`);
+  });
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) {
       createWindow();

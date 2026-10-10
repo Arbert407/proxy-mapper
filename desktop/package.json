@@ -8,8 +8,15 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
+    "copy-proxy": "node scripts/copy-proxy.js",
+    "prebuild": "npm run copy-proxy",
     "build": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
-    "package:win": "npm run build && electron-builder --win --publish never"
+    "clean:dist": "node scripts/clean-dist.js",
+    "prepackage:win": "npm run clean:dist",
+    "app:dir": "npm run clean:dist && npm run build && electron-builder --dir",
+    "app:dist": "npm run clean:dist && npm run build && electron-builder",
+    "package:win": "npm run clean:dist && npm run build && electron-builder --win --publish never",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.0",

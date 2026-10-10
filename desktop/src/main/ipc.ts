@@ -5,12 +5,18 @@
  * - US-063: handler logs:clear (limpia buffer FIFO en main + snapshot del renderer).
  * - US-064: handler logs:save (diálogo nativo + writeFile).
  * - US-092: handlers mappings:read / mappings:write (editor de pares).
+ * - US-095: handlers mappings:export / mappings:import (diálogo nativo + TSV).
  */
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { writeFile } from 'node:fs/promises';
 import { startProxy, stopProxy } from './proxy';
 import { clearLogsBuffer, getLogsBuffer } from './logs';
-import { readMappings, writeMappings } from './mappings';
+import {
+  exportMappingsToFile,
+  importMappingsFromFile,
+  readMappings,
+  writeMappings,
+} from './mappings';
 import { logger } from './logger';
 
 /**
@@ -96,5 +102,25 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mappings:write', async (event, pairs) => {
     assertTrustedSender(event);
     return writeMappings(pairs);
+  });
+
+  ipcMain.handle('mappings:export', async (event, pairs) => {
+    assertTrustedSender(event);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      logger.error('mappings:export: sin BrowserWindow padre para el diálogo');
+      return { ok: false, reason: 'no_window' };
+    }
+    return exportMappingsToFile(win, pairs);
+  });
+
+  ipcMain.handle('mappings:import', async (event) => {
+    assertTrustedSender(event);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      logger.error('mappings:import: sin BrowserWindow padre para el diálogo');
+      return { ok: false, reason: 'no_window' };
+    }
+    return importMappingsFromFile(win);
   });
 }

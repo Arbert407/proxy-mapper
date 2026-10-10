@@ -26,7 +26,9 @@ const api = {
   },
   mappings: {
     read: () => electron.ipcRenderer.invoke("mappings:read"),
-    write: (pairs) => electron.ipcRenderer.invoke("mappings:write", pairs)
+    write: (pairs) => electron.ipcRenderer.invoke("mappings:write", pairs),
+    export: (pairs) => electron.ipcRenderer.invoke("mappings:export", pairs),
+    import: () => electron.ipcRenderer.invoke("mappings:import")
   },
   app: {
     getVersion: () => electron.ipcRenderer.invoke("app:version")

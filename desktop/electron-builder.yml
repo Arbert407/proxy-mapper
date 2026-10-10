@@ -6,24 +6,48 @@ directories:
   output: dist
   buildResources: resources
 
+# Inclusion EXPLICITA de subdirectorios de dist/ (no recursivo sobre el root).
+# Si usaramos `dist/**/*`, builds previos (`Proxy Mapper Setup x.y.z.exe`,
+# `win-unpacked/`, etc.) se empaquetarian a si mismos en cada nueva corrida —
+# 470 MB observados vs ~150 MB esperados.
+# Reglas:
+#   - Incluye SOLO los outputs de Vite (main/preload/renderer bundleados).
+#   - Vite ya inlino las `dependencies` de runtime, NO queremos
+#     `node_modules/` aparte (eso duplica lo que el bundle ya tiene).
+#   - `proxy/` solo trae index.js/mapping.tsv/package.json (~5 KB) — el
+#     `copy-proxy` prebuild es quien lo llena.
+#   - Strip de `*.map` y `*.d.ts` (no se usan en runtime).
+#   - `!**/node_modules/**/*` explicito: aunque Vite ya bundle las deps,
+#     electron-builder auto-incluye production deps del package.json;
+#     necesitamos la negation explicita para excluirlas de app.asar.
 files:
-  - dist/**/*
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
   - package.json
   - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/*.tsbuildinfo"
+  - "!**/node_modules/**/*"
 
-# US-072: empaqueta los archivos del proxy (ESM entry + mapping.tsv + package.json
-# con `"type": "module"` para que `utilityProcess.fork` lo detecte) en
-# `resources/proxy/` dentro del .exe. El main los lee vía
-# `process.resourcesPath/proxy/*` (NO `app.getAppPath()`; ver nota técnica).
-# NO copiamos `node_modules` raíz porque el proxy sólo importa módulos
-# nativos de Node (http, https, fs, path, url).
+# US-072: extrae `proxy/` (index.js, package.json, mapping.tsv) a `resources/proxy/`
+# en el instalador, NO dentro del asar. Razon: `utilityProcess.fork()` necesita
+# archivos REALES en disco (asar es un FS virtual). Tambien sirve al target
+# `portable`: electron-builder NO desempaqueta `asarUnpack` para portable
+# (asar.unpacked queda vacio en la extraccion a TEMP) — `extraResources` SI lo
+# hace para ambos targets (NSIS y portable). Ver `proxy-bootstrap.ts`.
 extraResources:
-  - from: ../index.js
-    to: proxy/index.js
-  - from: ../mapping.tsv
-    to: proxy/mapping.tsv
-  - from: ../package.json
-    to: proxy/package.json
+  - from: proxy
+    to: proxy
+
+# US-071 (post-fix): solo en-US para Chromium y Electron.
+# Default de electron-builder incluye los 55 locales que Chromium trae
+# (incluyendo idiomas que el wrapper no soporta). Drop de los otros 54
+# ahorra ~50 MB del instalador. Coherente con UI-GUIDE/Fuera-de-alcance:
+# "Internacionalizacion (solo espanol)" — Electron runtime + chromium solo
+# exponen UI en en-US; los textos de la app son espanol dentro del bundle.
+electronLanguages:
+  - en-US
 
 # US-070: target NSIS para distribución estándar en Windows.
 # US-071: target portable (segundo target junto a nsis; un solo .exe sin instalación).
@@ -44,6 +68,10 @@ win:
 # oneClick:false muestra el wizard (elige carpeta, accesos directos).
 # allowToChangeInstallationDirectory:true deja al usuario mover el destino.
 # US-074 AC2 (filenames deterministas): artifactName explícito sin timestamps.
+# US-071 AC3 (<200MB): compression se controla con env var
+# `ELECTRON_BUILDER_COMPRESSION_LEVEL=9` (max LZMA, ~5-10% mas chico que default).
+# El default electron-builder (sin env var) es `normal`, suficiente para salir
+# del limite de 200 MB una vez resuelto el self-include bug.
 nsis:
   artifactName: ${productName} Setup ${version}.${ext}
   oneClick: false
@@ -51,8 +79,12 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  multiLanguageInstaller: false
+  language: "1033"
 
 # US-074 AC1+AC2: portable = segundo artefacto de la misma corrida;
 # artifactName determinista (sin timestamp) para release reproducible.
+# useZip:true NO lo usamos: el portable es un .exe auto-extraible, no un
+# contenedor zip (romperia la propiedad de "un solo exe sin instalacion").
 portable:
   artifactName: ${productName}-${version}-portable.${ext}

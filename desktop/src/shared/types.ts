@@ -43,6 +43,14 @@ export interface LogsApi {
 export interface MappingsApi {
   read: () => Promise<{ ok: boolean; pairs?: MappingPair[]; path?: string; reason?: string }>;
   write: (pairs: MappingPair[]) => Promise<{ ok: boolean; reason?: string }>;
+  export: (pairs: MappingPair[]) => Promise<{ ok: boolean; path?: string; reason?: string }>;
+  import: () => Promise<{
+    ok: boolean;
+    pairs?: MappingPair[];
+    skipped?: number;
+    path?: string;
+    reason?: string;
+  }>;
 }
 
 export interface AppApi {

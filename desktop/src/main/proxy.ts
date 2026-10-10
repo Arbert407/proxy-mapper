@@ -13,7 +13,8 @@
  * - US-054: emite `proxy:state` al renderer en cada transición.
  * - US-055: detecta crash (exit ≠ 0 / 'error') y emite `'crashed'`.
  * - US-056: pipea stdout/stderr del child al buffer de logs + IPC.
- * - US-057: `cwd` resuelve en dev (parent) o producción (`process.resourcesPath/proxy`).
+ * - US-057: `cwd` resuelve en dev (parent) o producción (`userData/proxy/`
+ *             via `ensureUserDataProxy()` — ver `proxy-bootstrap.ts`).
  */
 import { spawn as nativeSpawn } from 'node:child_process';
 import { utilityProcess, type UtilityProcess } from 'electron';
@@ -25,6 +26,7 @@ import { PROXY_SPAWN_OPTIONS } from './constants';
 import { appendLogLine } from './logs';
 import { logger } from './logger';
 import { emitProxyState } from './state-emitter';
+import { ensureUserDataProxy } from './proxy-bootstrap';
 
 export type StartResult =
   | { ok: true; pid: number }
@@ -44,16 +46,22 @@ export function isProxyRunning(): boolean {
 }
 
 /**
- * Resuelve el directorio donde vive el proyecto proxy (con `index.js`).
+ * Resuelve el directorio donde se va a forkear el proxy.
  *
- * - Dev:    `resolve(app.getAppPath(), '..')` — wrapper vive en `desktop/`,
- *           proxy en la raíz del repo.
- * - Prod:   `join(process.resourcesPath, 'proxy')` — asume que US-072
- *           empaqueta los archivos del proxy como `extraResources: proxy/`.
+ * - Dev:  `resolve(app.getAppPath(), '..')` — wrapper vive en `desktop/`,
+ *         proxy en la raíz del repo. `mapping.tsv` vive ahi tambien.
+ * - Prod: `userData/proxy/` — directorio writable por usuario. El wrapper
+ *         copia `index.js` + `package.json` desde el asar al primer arranque
+ *         (`ensureUserDataProxy()`); `mapping.tsv` lo crea vacio. El proxy
+ *         resuelve su propio `__dirname` via `import.meta.url`, que apunta
+ *         al path real en userData y le deja leer `mapping.tsv` al lado.
+ *
+ * Ver `proxy-bootstrap.ts` para la justificacion de mover mapping a userData
+ * y los detalles del bootstrap.
  */
-function resolveAppRoot(): string {
+async function resolveAppRoot(): Promise<string> {
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'proxy');
+    return ensureUserDataProxy();
   }
   return resolve(app.getAppPath(), '..');
 }
@@ -85,7 +93,7 @@ export async function startProxy(): Promise<StartResult> {
     return { ok: false, reason: 'already_running' };
   }
 
-  const appRoot = resolveAppRoot();
+  const appRoot = await resolveAppRoot();
   const entry = join(appRoot, 'index.js');
   if (!existsSync(entry)) {
     const reason = `index.js no encontrado en ${appRoot}`;

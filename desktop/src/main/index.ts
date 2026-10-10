@@ -4,6 +4,7 @@ import { registerIpcHandlers } from './ipc';
 import { bindMainWindow } from './state-emitter';
 import { logger } from './logger';
 import { isProxyRunning, stopProxy } from './proxy';
+import { ensureUserDataProxy } from './proxy-bootstrap';
 import { readVersions } from './version';
 
 // US-073: AppUserModelId debe coincidir con `appId` de electron-builder.yml.
@@ -68,6 +69,15 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
   bindMainWindow();
+
+  // Bootstrap del proxy en userData: copia index.js + package.json desde
+  // el asar y crea mapping.tsv vacio. Fire-and-forget — si falla, los
+  // handlers ya registrados daran el error al usuario al intentar leer/
+  // arrancar. Ver proxy-bootstrap.ts.
+  void ensureUserDataProxy().catch((err: unknown) => {
+    const reason = err instanceof Error ? err.message : String(err);
+    logger.error(`whenReady: bootstrap del proxy fallo: ${reason}`);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

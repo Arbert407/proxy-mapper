@@ -4,14 +4,22 @@
  * - US-092: tabla 2 columnas, "+" agrega fila, "x" elimina fila, auto-save al disco.
  * - US-093: validación inline — rechaza vacíos, tab/newline, duplicados.
  * - US-094 (pendiente): header con ruta absoluta del archivo.
+ * - US-095: botones "Importar" / "Exportar" para mover mappings entre
+ *   máquinas (TSV drop-in). El export escribe el mismo formato que
+ *   `mapping.tsv`; el import filtra pares inválidos y reporta cuántos se
+ *   descartaron. Si hay datos sin guardar, el import pide confirmación
+ *   antes de reemplazar (los cambios pendientes se pierden).
  *
  * Decisiones:
  * - Auto-save con debounce de 300ms: evita spam de IPC en cada keystroke.
  * - Si hay errores de validación, NO se auto-guarda (los errores son inline
  *   y el usuario los ve directamente en la celda).
  * - Errores de auto-save (write del main): toast no bloqueante, usuario sigue editando.
+ * - Import pide confirmación (`window.confirm`) si el estado en memoria
+ *   difiere del último guardado en disco: previene pérdida silenciosa de
+ *   cambios aún no flusheados por el debounce.
  */
-import { Plus, Trash2 } from 'lucide-react';
+import { Download, Plus, Trash2, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MappingPair } from '@shared/types';
 import { countErrors, validateMappings } from '@shared/mappings-validation';
@@ -90,6 +98,82 @@ export const MappingsPage = () => {
     [],
   );
 
+  // US-095: export a un .tsv elegido vía diálogo nativo. Sin confirmación
+  // porque es no-destructivo: el archivo destino no se sobreescribe a menos
+  // que el usuario lo confirme en el propio diálogo de Windows.
+  const handleExport = useCallback(() => {
+    const api = window.api?.mappings;
+    if (!api) return;
+    const snapshot = pairs ?? [];
+    if (snapshot.length === 0) {
+      toast.info('No hay pares para exportar', {
+        description: 'Agrega al menos un par antes de exportar.',
+      });
+      return;
+    }
+    void api.export(snapshot).then((result) => {
+      if (result.ok) {
+        toast.success('Mappings exportados', {
+          description: `${snapshot.length} pares en ${result.path}`,
+        });
+      } else if (result.reason === 'canceled') {
+        // No-op silencioso (mismo patrón que logs:save en US-064).
+      } else {
+        toast.error('No se pudo exportar el mappings', {
+          description: result.reason ?? 'Error desconocido',
+        });
+      }
+    });
+  }, [pairs]);
+
+  // US-095: import desde un .tsv. Pide confirmación si el editor tiene
+  // cambios sin guardar (estado !== disco) — los cambios pendientes se
+  // perderían al reemplazar `pairs`. El debounce de 300ms puede tener
+  // una escritura en vuelo justo antes del confirm, pero el write es
+  // best-effort: si falla, el import lo sobreescribe de todos modos
+  // (decisión deliberada: el usuario ya confirmó que quiere reemplazar).
+  const handleImport = useCallback(() => {
+    const api = window.api?.mappings;
+    if (!api) return;
+    const hasUnsaved = (pairs?.length ?? 0) > 0;
+    if (hasUnsaved) {
+      const ok = window.confirm(
+        'Vas a reemplazar los mappings actuales por los del archivo. ¿Continuar?',
+      );
+      if (!ok) return;
+    }
+    void api.import().then((result) => {
+      if (!result.ok) {
+        if (result.reason === 'canceled') return;
+        if (result.reason === 'no_valid_pairs') {
+          toast.error('El archivo no contiene pares válidos', {
+            description: result.path,
+          });
+          return;
+        }
+        toast.error('No se pudo importar el mappings', {
+          description: result.reason ?? 'Error desconocido',
+        });
+        return;
+      }
+      const incoming = result.pairs ?? [];
+      setPairs(incoming);
+      // El `useEffect` de auto-save va a flushear a disco en el próximo
+      // ciclo (300ms). Si el usuario cierra la app antes, perderá el
+      // import — aceptable porque ya confirmó el reemplazo.
+      const skipped = result.skipped ?? 0;
+      if (skipped > 0) {
+        toast.warning(`Importados ${incoming.length} pares (${skipped} omitidos)`, {
+          description: 'Revisa vacíos, duplicados o caracteres inválidos.',
+        });
+      } else {
+        toast.success(`Importados ${incoming.length} pares`, {
+          description: result.path,
+        });
+      }
+    });
+  }, [pairs]);
+
   if (!isLoaded || pairs === null) {
     return (
       <div className="p-6">
@@ -102,10 +186,20 @@ export const MappingsPage = () => {
     <div className="p-6 flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">Mappings</h1>
-        <Button onClick={handleAdd} size="sm" variant="outline">
-          <Plus className="h-4 w-4 mr-2" />
-          Agregar par
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleImport} size="sm" variant="ghost" title="Importar mappings desde un .tsv">
+            <Upload className="h-4 w-4 mr-2" />
+            Importar
+          </Button>
+          <Button onClick={handleExport} size="sm" variant="ghost" title="Exportar mappings a un .tsv">
+            <Download className="h-4 w-4 mr-2" />
+            Exportar
+          </Button>
+          <Button onClick={handleAdd} size="sm" variant="outline">
+            <Plus className="h-4 w-4 mr-2" />
+            Agregar par
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-xs">
