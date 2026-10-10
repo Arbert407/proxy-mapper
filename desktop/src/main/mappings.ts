@@ -3,7 +3,7 @@
  *
  * Resolución del path (consistente con `proxy.ts` y `proxy-bootstrap.ts`):
  *
- *   Dev:  `app.getAppPath()/../mapping.tsv` = raíz del repo
+ *   Dev:  `app.getAppPath()/../../proxy/mapping.tsv` = carpeta `proxy/` del repo
  *   Prod: `app.getPath('userData')/proxy/mapping.tsv`
  *
  * Formato del archivo:
@@ -63,7 +63,7 @@ export interface ImportResult {
 /**
  * Path al `mapping.tsv` del proxy.
  *
- * - Dev:  `<raíz del repo>/mapping.tsv` (proxy en raíz, wrapper en `desktop/`).
+ * - Dev:  `<repo>/proxy/mapping.tsv` (proxy vive en `proxy/`, wrapper en `desktop/`).
  * - Prod: `userData/proxy/mapping.tsv` — directorio writable, per-user,
  *         separado del codigo del wrapper. Generado vacio por
  *         `ensureUserDataProxy()` en el primer arranque.
@@ -79,7 +79,7 @@ function resolveMappingPath(): string {
   if (app.isPackaged) {
     return join(getUserDataProxyDir(), 'mapping.tsv');
   }
-  return join(app.getAppPath(), '..', 'mapping.tsv');
+  return join(app.getAppPath(), '..', 'proxy', 'mapping.tsv');
 }
 
 function parseTsv(content: string): MappingPair[] {

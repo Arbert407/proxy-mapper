@@ -17,6 +17,7 @@
 9. [Troubleshooting](#-troubleshooting)
 10. [Roadmap](#-roadmap)
 11. [Referencias](#-referencias)
+12. [Wrapper Desktop (Electron)](#-wrapper-desktop-electron)
 
 ---
 
@@ -602,6 +603,40 @@ Próximamente:
 ### v0.x (Histórico)
 - Versiones iniciales con Express (`index.js`)
 - Iteraciones para resolver bugs de streaming y tools
+
+---
+
+## 🖥️ Wrapper Desktop (Electron)
+
+El proxy también viene como una **aplicación de escritorio** (Electron + React
++ TypeScript) que lo envuelve con un botón de encendido/apagado, visor de logs
+en tiempo real y editor de mappings. El wrapper vive en `desktop/`.
+
+### Comandos principales
+
+| Comando | Ubicación | Qué hace |
+|---|---|---|
+| `npm run dev` | `desktop/` | Arranca Vite + Electron con HMR (devtools abierto). |
+| `npm run build` | `desktop/` | Compila main + preload + renderer a `desktop/dist/`. |
+| `npm run app:dir` | `desktop/` | Smoke test: descomprime el binario sin instalador (~1 min). |
+| `npm run package:win` | `desktop/` | Genera instalador NSIS + portable .exe en `desktop/dist/`. |
+
+### Output esperado de `package:win`
+
+| Archivo | Tamaño típico | Ubicación |
+|---|---|---|
+| `Proxy Mapper Setup 0.1.0.exe` | ~67 MB | `desktop/dist/` |
+| `Proxy Mapper-0.1.0-portable.exe` | ~67 MB | `desktop/dist/` |
+| `win-unpacked/Proxy Mapper.exe` | ~250 MB | `desktop/dist/` |
+
+### Mappings en producción
+
+El `mapping.tsv` se guarda en `%APPDATA%\proxy-mapper-desktop\proxy\mapping.tsv`
+(per-Windows-user, persiste entre reinstalaciones y updates). No commitees
+mappings al repo — son personales y pueden contener datos sensibles.
+
+> **Docs completas del wrapper**: ver [`desktop/README.md`](./desktop/README.md)
+> (prerrequisitos, instalación, troubleshooting, smoke test post-build).
 
 ---
 

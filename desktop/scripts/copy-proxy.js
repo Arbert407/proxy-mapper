@@ -1,10 +1,10 @@
 /**
  * scripts/copy-proxy.js - Sincroniza los archivos del proxy dentro del wrapper.
  *
- * Source: raiz del repo (../index.js, ../package.json) + starter local
- *         (./mapping.tsv starter, generado si no existe).
+ * Source: carpeta `proxy/` del repo (../proxy/index.js, ../proxy/package.json)
+ *         + starter local (./mapping.tsv starter, generado si no existe).
  * Target: desktop/proxy/ — los incluye electron-builder via `files` y
- *         `asarUnpack` (ver electron-builder.yml).
+ *         `extraResources` (ver electron-builder.yml).
  *
  * NOTA: mapping.tsv arranca VACIO. Cada instalacion del wrapper tendra
  * su propio archivo en userData (ver proxy-bootstrap.ts) que se llena
@@ -13,14 +13,14 @@
  * (no se filtra el `mapping.tsv` del dev al distribuir).
  *
  * Por que un script y no symlinks:
- * - electron-builder a veces rompe symlinks al empacar (asar/asarUnpack).
+ * - electron-builder a veces rompe symlinks al empacar (asar/extraResources).
  * - Windows no soporta symlinks sin privilegios de admin.
  * - El script es explicito y debuggeable.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 
-const REPO_ROOT = path.join(__dirname, '..', '..');
+const REPO_ROOT = path.join(__dirname, '..', '..', 'proxy');
 const TARGET_DIR = path.join(__dirname, '..', 'proxy');
 const FILES = ['index.js', 'package.json'];
 const MAPPING_STARTER = 'mapping.tsv';

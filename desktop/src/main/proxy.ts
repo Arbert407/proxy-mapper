@@ -48,13 +48,13 @@ export function isProxyRunning(): boolean {
 /**
  * Resuelve el directorio donde se va a forkear el proxy.
  *
- * - Dev:  `resolve(app.getAppPath(), '..')` — wrapper vive en `desktop/`,
- *         proxy en la raíz del repo. `mapping.tsv` vive ahi tambien.
+ * - Dev:  `resolve(app.getAppPath(), '..', '..', 'proxy')` — wrapper vive
+ *         en `desktop/`, proxy en `<repo>/proxy/`. `mapping.tsv` vive ahi tambien.
  * - Prod: `userData/proxy/` — directorio writable por usuario. El wrapper
- *         copia `index.js` + `package.json` desde el asar al primer arranque
- *         (`ensureUserDataProxy()`); `mapping.tsv` lo crea vacio. El proxy
- *         resuelve su propio `__dirname` via `import.meta.url`, que apunta
- *         al path real en userData y le deja leer `mapping.tsv` al lado.
+ *         copia `index.js` + `package.json` desde `process.resourcesPath/proxy/`
+ *         al primer arranque (`ensureUserDataProxy()`); `mapping.tsv` lo crea
+ *         vacio. El proxy resuelve su propio `__dirname` via `import.meta.url`,
+ *         que apunta al path real en userData y le deja leer `mapping.tsv` al lado.
  *
  * Ver `proxy-bootstrap.ts` para la justificacion de mover mapping a userData
  * y los detalles del bootstrap.
@@ -63,7 +63,7 @@ async function resolveAppRoot(): Promise<string> {
   if (app.isPackaged) {
     return ensureUserDataProxy();
   }
-  return resolve(app.getAppPath(), '..');
+  return resolve(app.getAppPath(), '..', 'proxy');
 }
 
 function pipeChildStream(stream: NodeJS.ReadableStream | null, source: 'stdout' | 'stderr'): void {

@@ -1,15 +1,15 @@
 # package-portable.ps1 - Compila el wrapper y produce el .exe portable en assets/.
 #
 # Uso (desde la raíz del repo):
-#   .\package-portable.ps1            # fast mode (default, sin compresión)
-#   .\package-portable.ps1 -Fast:$false  # max compression (lento)
+#   .\desktop\scripts\package-portable.ps1            # fast mode (default, sin compresión)
+#   .\desktop\scripts\package-portable.ps1 -Fast:$false  # max compression (lento)
 #
 # Salida:
-#   assets\Proxy Mapper-<version>-portable.exe
+#   <repo>\assets\Proxy Mapper-<version>-portable.exe
 #
 # Optimizaciones aplicadas (no requieren parámetros):
 #   - ELECTRON_BUILDER_COMPRESSION_LEVEL=0 (store mode, sin LZMA2)
-#   - electronLanguages: ['en-US','es'] en electron-builder.yml (55 → 2 locales)
+#   - electronLanguages: ['en-US'] en electron-builder.yml (55 → 1 locales)
 #   - Wrapper C# con WaitForExit(15min) en node_modules/7zip-bin/win/x64/7za.exe
 #     (resuelve el error "Cannot create symbolic link" de winCodeSign en
 #     Windows sin Developer Mode)
@@ -19,8 +19,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$root = $PSScriptRoot
-$desktop = Join-Path $root 'desktop'
+$scriptDir = $PSScriptRoot
+$desktop = Split-Path -Parent $scriptDir
+$root = Split-Path -Parent $desktop
 $assets = Join-Path $root 'assets'
 $yml = Join-Path $desktop 'electron-builder.yml'
 

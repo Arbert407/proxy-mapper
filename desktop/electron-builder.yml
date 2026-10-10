@@ -36,8 +36,12 @@ files:
 # `portable`: electron-builder NO desempaqueta `asarUnpack` para portable
 # (asar.unpacked queda vacio en la extraccion a TEMP) — `extraResources` SI lo
 # hace para ambos targets (NSIS y portable). Ver `proxy-bootstrap.ts`.
+#
+# `from: ../proxy` apunta a la carpeta `proxy/` en la raiz del repo
+# (refactor 2026-10: el codigo del proxy dejo de vivir en la raiz para
+# evitar duplicacion con `desktop/proxy/`, que es output de copy-proxy.js).
 extraResources:
-  - from: proxy
+  - from: ../proxy
     to: proxy
 
 # US-071 (post-fix): solo en-US para Chromium y Electron.

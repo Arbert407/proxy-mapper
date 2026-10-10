@@ -4,6 +4,10 @@ node_modules/
 config.json
 .DS_Store
 
+# Outputs del proxy cuando se ejecuta standalone (npm start desde proxy/).
+proxy/*.log
+proxy/node_modules/
+
 # Binarios compilados (489 MB cada uno, exceden el límite de GitHub de 100 MB).
 # Distribuir vía GitHub Releases — ver README.md para instrucciones.
 assets/*.exe

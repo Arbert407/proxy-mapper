@@ -106,21 +106,41 @@ export const PowerButton = ({ state, onToggle }: PowerButtonProps) => {
 
 ## Build y Distribución
 
-El wrapper Electron se construye desde `desktop/`:
+El wrapper Electron se construye desde `desktop/`. Scripts disponibles en
+`desktop/package.json`:
 
 ```bash
 cd desktop
-npm run dev          # desarrollo con HMR
-npm run build        # compila TypeScript + Vite (producción)
-npm run package:win  # genera .exe en release/
+
+npm run dev          # desarrollo: Vite + Electron con HMR (devtools abre solo)
+npm run build        # compila main+preload+renderer a dist/ (sin instalador)
+npm run clean:dist   # borra dist/ (corre auto antes de package:win via prepackage:win)
+npm run app:dir      # smoke test: descomprime binario sin instalador (~1 min)
+npm run app:dist     # corre todos los targets de electron-builder.yml (evitar en CI)
+npm run package:win  # genera instalador NSIS + portable .exe (~5-7 min)
 ```
 
-Artefactos generados en `desktop/release/`:
+**Script auxiliar (solo portable, alternativo a `package:win`)**:
+```powershell
+# desde la raíz del repo
+.\desktop\scripts\package-portable.ps1            # fast mode (~2-3 min, +30% tamaño)
+.\desktop\scripts\package-portable.ps1 -Fast:$false # max compression (~7-10 min)
+```
+
+Artefactos generados en `desktop/dist/`:
 - `win-unpacked/electron.exe` — portable (directorio, para testing)
 - `win-unpacked/resources/app.asar` — app empaquetada
-- `Proxy Mapper Setup X.X.X.exe` — instalador NSIS (cuando termine)
+- `win-unpacked/resources/proxy/` — `index.js` + `package.json` + `mapping.tsv` (extraResources)
+- `Proxy Mapper Setup X.X.X.exe` — instalador NSIS (~67 MB)
+- `Proxy Mapper-X.X.X-portable.exe` — portable .exe (~67 MB)
 
-**Nota**: el build config vive en `desktop/electron-builder.yml` (no en `package.json`). El script `package:win` usa `electron-builder --win --publish never`.
+**Notas**:
+- El build config vive en `desktop/electron-builder.yml` (no en `package.json`).
+- El script `package:win` corre `clean:dist` + `build` + `electron-builder --win --publish never`.
+- El `prebuild` hook corre `copy-proxy` que sincroniza `proxy/` → `desktop/proxy/`
+  (artefacto del bundle, regenerable).
+- Para docs detalladas de cada script, ver [`desktop/README.md`](./desktop/README.md#build).
+- Para troubleshooting de build, ver [`docs/build-troubleshooting.md`](./docs/build-troubleshooting.md).
 
 ---
 
