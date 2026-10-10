@@ -50,13 +50,17 @@ if ($Fast) {
     Write-Host "Modo MAX compression: mx=9. ~7-10 min, .exe mas chico." -ForegroundColor Yellow
 }
 
-Write-Host "[1/3] Compilando renderer/main/preload..." -ForegroundColor Cyan
+Write-Host "[1/4] Limpiando dist/ previo..." -ForegroundColor Cyan
 Push-Location $desktop
 try {
+    npm run clean:dist | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "npm run clean:dist fallo (exit $LASTEXITCODE)" }
+
+    Write-Host "[2/4] Compilando renderer/main/preload..." -ForegroundColor Cyan
     npm run build | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "npm run build fallo (exit $LASTEXITCODE)" }
 
-    Write-Host "[2/3] Empaquetando portable..." -ForegroundColor Cyan
+    Write-Host "[3/4] Empaquetando portable..." -ForegroundColor Cyan
     $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
     npx electron-builder --win portable --publish never | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "electron-builder fallo (exit $LASTEXITCODE)" }
@@ -70,7 +74,7 @@ if (-not (Test-Path -LiteralPath $builtPath)) {
     throw "No se encontró el portable en $builtPath"
 }
 
-Write-Host "[3/3] Copiando a assets/..." -ForegroundColor Cyan
+Write-Host "[4/4] Copiando a assets/..." -ForegroundColor Cyan
 Copy-Item -LiteralPath $builtPath -Destination $outPath -Force
 $sizeMb = [math]::Round((Get-Item -LiteralPath $outPath).Length / 1MB, 1)
 Write-Host "Listo: $outPath ($sizeMb MB)" -ForegroundColor Green

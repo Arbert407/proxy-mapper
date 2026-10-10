@@ -488,6 +488,11 @@
 - **US-068 — `className="h-full"` en Virtuoso**: aplica al `Scroller` interno (el div scrolleable). El padre (`flex-1 min-h-0 bg-slate-950`) le da altura via flex + min-height:0. Sin `h-full`, Virtuoso mide su contenedor como 0 y no scrollea.
 - **US-068 — `px-4` movido del contenedor a cada `LogLine`**: Virtuoso no hereda padding del contenedor (los items son nodos hermanos del inner content). Para mantener el mismo indent visual que el shell anterior, `LogLine` incluye `px-4` en su root. `py-3` ya no se aplica (espacio sólo arriba/abajo del contenedor); cada item usa `leading-relaxed` (1.625 line-height) que da densidad equivalente.
 - **US-068 — bundle size trade-off**: react-virtuoso agrega +58.77 kB raw / +20.41 kB gzip al renderer. Es el precio de la virtualización. Sin ella, el `<div>` con map de 5000 entries tendría 5000 nodos DOM permanentes (10-15 MB de memoria en Chromium), lag en scroll, jank en CPU. Para un visor de logs es el trade-off correcto. Alternativas evaluadas: `react-window` (-10 kB pero API menos amigable para followOutput), custom windowing (más código, sin bundle extra) — descartadas.
+- **US-095 — Decisión de diseño: import/export explícito en vez de datos-portable-al-lado-del-exe**: evaluadas 3 opciones para resolver "el usuario quiere sus mappings en otra máquina" (ver conversación pre-US-095). Ganó la opción A (export/import explícito) sobre la C (portable al lado del .exe) por una razón de seguridad: el `mapping.tsv` contiene API keys en texto plano, así que la portabilidad automática filtra secretos en medios compartidos (USB, redes). El export es **opt-in**: el usuario decide conscientemente cuándo mueve datos. Nombre fijo `export_mappings_proxy_mapper.tsv` para que sea fácil de identificar en un File Explorer / issue tracker.
+- **US-095 — Import tolerante a archivos sucios**: `importMappingsFromFile` no rechaza el archivo si tiene pares inválidos — los filtra y reporta el conteo. Razón: si el usuario edita el .tsv a mano en Notepad y deja una línea de header `real\tmasked`, queremos que la importación funcione (con la línea omitida) en vez de tirar un error. Sólo se considera error si NINGÚN par sobrevive la validación (`reason: 'no_valid_pairs'`) — eso sí es un archivo inservible.
+- **US-095 — Reutilización de `serializeTsv` y `parseTsv`**: las funciones que ya existían para `mapping.tsv` se reusan 1:1 para el export/import. Garantía de roundtrip: un archivo exportado se puede reimportar sin pérdida. El formato externo es bit-exact al interno — un usuario podría copiar el archivo exportado encima de `mapping.tsv` y la app lo leería igual (no es el flujo soportado, pero es coherente).
+- **US-095 — Confirmación sólo si hay cambios pendientes**: el `window.confirm` antes de importar sólo se dispara si `pairs.length > 0` cuando se clickea Importar. Razón: si el editor está vacío, no hay nada que perder, así que el import puede proceder sin fricción. La heurística es deliberadamente simple (no chequea `pairs !== lastSavedSnapshot`) — el debounce de auto-save es de 300ms, en el peor caso se pierde 1 keystroke, no es significativo.
+- **US-095 — `dialog.showSaveDialog(win, ...)` con `win: BrowserWindow`**: la `BrowserWindow` se pasa como parent para que el diálogo sea **modal** a la ventana del wrapper (no aparece detrás si el usuario alt-tab). Mismo patrón que `logs:save` (US-064), documentado en `main/ipc.ts`.
 
 ---
 
@@ -591,6 +596,7 @@
 | **US-092** | Como usuario, quiero ver y editar el `mapping.tsv` desde una vista `/mappings` con tabla de 2 columnas (`real`, `masked`), botones para agregar y eliminar filas, y auto-save al disco. | M | 3 | [x] |
 | **US-093** | Como usuario, quiero que la app valide los pares antes de guardar: no permitir duplicados (mismo `real`), no permitir vacíos, no permitir tab/newline dentro de un valor. Errores inline en la celda. | M | 2 | [x] |
 | **US-094** | Como usuario, quiero ver la ruta absoluta del archivo `mapping.tsv` que se está editando, en el header de la vista `/mappings`, para saber cuál archivo se modifica. | C | 1 | [ ] |
+| **US-095** | Como usuario, quiero botones **Importar** / **Exportar** en la vista `/mappings` para mover mis mappings entre máquinas. El export usa el mismo formato que `mapping.tsv` (drop-in) y el nombre por defecto es `export_mappings_proxy_mapper.tsv`. El import filtra pares inválidos y reporta cuántos se omitieron. | S | 3 | [x] |
 
 ### Criterios de aceptación
 
@@ -610,6 +616,20 @@
 - [ ] Header de `/mappings` muestra la ruta absoluta del TSV
 - [ ] Ruta leída de `app.getAppPath() + '/resources/mapping.tsv'`
 - [ ] Texto monoespaciado y truncado si excede el ancho
+
+**US-095**
+- [x] Botón **Exportar** en el header de `/mappings` abre diálogo nativo "Guardar como…"
+- [x] Nombre por defecto del archivo exportado: `export_mappings_proxy_mapper.tsv`
+- [x] Filtro del diálogo: `*.tsv` con fallback a "Todos los archivos"
+- [x] Formato del archivo: idéntico a `mapping.tsv` (un par por línea, tab-separado, `\n` final)
+- [x] Cancelar el diálogo = no-op silencioso (sin toast de error)
+- [x] Botón **Importar** en el header abre diálogo nativo "Abrir…"
+- [x] Si el editor tiene pares sin guardar (cambios pendientes), Importar pide confirmación antes de reemplazar
+- [x] Pares inválidos en el archivo importado (vacíos, con `\t`/`\n`, duplicados) se filtran y se reportan en un toast `warning` con el conteo
+- [x] Si **ningún** par del archivo pasa validación, retorna `no_valid_pairs` y toast de error
+- [x] Importación exitosa → `setPairs(...)` reemplaza el editor; auto-save flushea a disco en el siguiente ciclo
+- [x] IPC handlers: `mappings:export`, `mappings:import` (registrados en `ipc.ts` con `assertTrustedSender`)
+- [x] Ambos handlers usan `dialog.show*Dialog(win, …)` con la `BrowserWindow` como parent (diálogo modal)
 
 ---
 
@@ -658,12 +678,61 @@
 ## Notas Técnicas por US (cerradas)
 
 - **US-070 — `electron-builder.yml` con target NSIS**: el `yml` original ya cumplía AC #1 (`win.target: nsis`) y AC #3 (`nsis.perMachine: false` instala en `%LOCALAPPDATA%` sin requerir admin). El `productName: "Proxy Mapper"` + `version` de `desktop/package.json` hacen que el artefacto se llame por defecto `Proxy Mapper Setup <version>.exe` (formato `${productName} Setup ${version}.${ext}` de electron-builder), cumpliendo AC #2 sin necesidad de `artifactName` explícito. Decisiones de scope del instalador: `oneClick: false` (muestra wizard; permite elegir carpeta), `allowToChangeInstallationDirectory: true`, `createDesktopShortcut: true`, `createStartMenuShortcut: true`. **Nota sobre verificación end-to-end**: `npm run package:win` requiere Developer Mode o admin en Windows porque `7za.exe` (de `7zip-bin`) no puede crear los symlinks de macOS dentro del archivo `winCodeSign` sin esos privilegios. Esta limitación es de **entorno**, no de config — el AC de código está cumplido. Verificación visual del `.exe` se hará en un Windows con Developer Mode habilitado o con `USE_SYSTEM_7ZA=true` apuntando a un 7-Zip del sistema que ignore los symlinks fallidos.
-- **US-071 — target portable (mismo `win.target` array)**: agregar `- target: portable` con `arch: [x64]` como segundo item del array `win.target` (al lado de `nsis`). `electron-builder` emite entonces DOS artefactos en una sola corrida: el instalador NSIS y el portable. AC #2 se cumple por default — el target `portable` de electron-builder es un único `.exe` auto-extraíble (no instalador, no requiere admin, no escribe en `Program Files`). AC #3 (peso <200 MB) se estima: Electron base x64 ~150 MB + wrapper `dist/` ~270 KB + proxy `resources/proxy/` <20 KB = ~155 MB total, holgura amplia. La verificación del tamaño exacto se hará cuando se ejecute `npm run package:win` en un entorno con Developer Mode habilitado. **artifactName**: por ahora se deja el default (`${productName}-${version}-portable.${ext}` → `Proxy Mapper-0.1.0-portable.exe`); US-074 lo hará explícito/determinista si hace falta.
+- **US-071 — target portable (mismo `win.target` array)**: agregar `- target: portable` con `arch: [x64]` como segundo item del array `win.target` (al lado de `nsis`). `electron-builder` emite entonces DOS artefactos en una sola corrida: el instalador NSIS y el portable. AC #2 se cumple por default — el target `portable` de electron-builder es un único `.exe` auto-extraíble (no instalador, no requiere admin, no escribe en `Program Files`). **artifactName**: por ahora se deja el default (`${productName}-${version}-portable.${ext}` → `Proxy Mapper-0.1.0-portable.exe`); US-074 lo hará explícito/determinista si hace falta.
+- **US-071 — fix post-cierre: NSIS y portable pasaron de 470 MB a ~68 MB (objetivo ≤200 MB)**:
+  - **Bug 1 — auto-inclusión recursiva de `dist/`**: la config original `files: - dist/**/*` empacaba recursivamente TODO lo que había en `dist/`, incluidos los `.exe` y `win-unpacked/` de builds PREVIOS. Resultado observado: `app.asar` crecía a 582 MB porque el instalador se metía a sí mismo y a su árbol extraído. Cada `npm run package:win` lo hacía peor (auto-referencia acumulativa).
+  - **Fix 1**: la regla `files` ahora lista explícitamente las subcarpetas que SÍ son outputs válidos de Vite (`dist/main/**`, `dist/preload/**`, `dist/renderer/**`); los `.exe` previos y `win-unpacked/` quedan fuera por construcción.
+  - **Bug 2 — 55 locales en Chromium**: el default de `electron-builder` incluía los 55 archivos `locales/*.pak` de Chromium/electron (af, am, ar, bg, bn, ca, cs, da, de, el, en-GB, en-US, es-419, es, et, fa, fi, fil, fr, gu, he, hi, hr, hu, id, it, ja, kn, ko, lt, lv, ml, mr, ms, nb, nl, pl, pt-BR, pt-PT, ro, ru, sk, sl, sr, sv, sw, ta, te, th, tr, uk, vi, zh-CN, zh-TW). 54 de esos idiomas no se usan en un wrapper monolingüe español.
+  - **Fix 2**: agregado `electronLanguages: ['en-US']` a nivel raíz del `yml`. Resultado: `dist/win-unpacked/locales/` ahora contiene SOLO `en-US.pak`.
+  - **Bug 3 — auto-inclusión de `node_modules` por electron-builder**: aunque las deps del wrapper están bundleadas por Vite en `dist/renderer/assets/index-*.js`, electron-builder escanea `package.json` y copia `node_modules/<prod-deps>` de todos modos (lucide-react, react, react-dom, react-router-dom, react-virtuoso, scheduler, etc.). 2-3 MB extra que NO aportan valor.
+  - **Fix 3**: agregada negación explícita `"!**/node_modules/**/*"` al final del bloque `files`. Verificado en el asar post-build: cero entradas bajo `node_modules/`.
+  - **Bug 4 — `dist/` no se limpiaba entre builds**: aunque la regla `files` ya estaba corregida, cualquier build anterior dejaba artefactos (.exe viejos, win-unpacked/) en disco, que electron-builder respetaba pero ensuciaban el repo y la próxima corrida.
+  - **Fix 4**: nuevo script `desktop/scripts/clean-dist.js` (Node, cross-platform) que borra `dist/` antes de empaquetar. Encadenado en:
+    - `package.json`: `"prepackage:win": "npm run clean:dist"` (hook npm) + `"package:win": "npm run clean:dist && npm run build && electron-builder ..."` (defensa explícita en el script principal).
+    - `package.json`: `"app:dir"`, `"app:dist"` también invocan clean primero.
+    - `package-portable.ps1`: nuevo step `[1/4] Limpiando dist/ previo`.
+  - **Resultado medido** (v0.1.0, Windows 10, con `ELECTRON_BUILDER_COMPRESSION_LEVEL=9`):
+    - Antes: `Proxy Mapper Setup 0.1.0.exe` = 470.43 MB, `Proxy Mapper-0.1.0-portable.exe` = 470.23 MB ❌
+    - Después: NSIS = **67.73 MB** ✓, portable = **67.58 MB** ✓ (66% del límite de 200 MB).
+    - `app.asar`: antes 582 MB → después **0.3 MB** (sólo proxy files + bundles de Vite).
+    - `locales/`: antes 55 archivos → después **1 archivo** (`en-US.pak`).
+  - **Decisión sobre `compression: maximum`**: intentamos agregarlo al bloque `nsis:` del YAML pero electron-builder 24.13.3 rechaza la propiedad (schema no la incluye). El control de compresión LZMA se hace vía env var `ELECTRON_BUILDER_COMPRESSION_LEVEL=9` (mx=9 = ultra-64). El PS1 ya lo seteaba en fast mode; lo generalizamos a la config principal dejándolo opcional vía env var (default `normal` → 67 MB ya cumple).
+  - **Schema de electron-builder 24 vs 25+**: propiedades como `oneLanguage: true` existen en v25 pero NO en v24 (usa `multiLanguageInstaller: false` + `language: "1033"` en su lugar). Documentado para evitar futuros PRs que fallen el schema validation.
 - **US-072 — `extraResources` para `mapping.tsv` (con dos archivos acompañantes)**:
   - **Por qué 3 archivos y no solo `mapping.tsv`**: el AC pide empaquetar `mapping.tsv` como `extraResources`, pero en producción el proxy (`index.js`) corre con `cwd = process.resourcesPath/proxy/` (decisión de US-057 — `utilityProcess.fork` resuelve el cwd en base al ejecutable, no a `app.getAppPath()`). Para que el proxy pueda leer `mapping.tsv` desde `__dirname` sin tener que recibir el path absoluto por argumento, el archivo debe estar junto a `index.js`. Por eso se empaquetan juntos en `resources/proxy/`: `index.js` (ESM entry del proxy), `mapping.tsv` (diccionario), `package.json` (con `"type": "module"` para que `utilityProcess.fork` detecte ESM; sin este archivo el fork podría interpretar `index.js` como CJS y fallar el import).
   - **Por qué NO se copia `node_modules` raíz**: `index.js` sólo importa módulos nativos de Node (`http`, `https`, `fs`, `path`, `url`). Las deps listadas en `proxy-mapper/package.json` (`@ai-sdk/openai-compatible`, `express`, `swagger-ui-express`) NO son importadas por el código actual del proxy — quedaron como remanente de un desarrollo previo. Verificado con grep: `import.*from` y `require(` en `index.js` no referencian ninguna dep externa. El `package.json` copiado sólo sirve para declarar `"type": "module"`; sus deps son ignoradas en runtime.
   - **Desviación del AC #2**: el AC literal dice "el archivo está accesible vía `app.getAppPath()`". La implementación real lo deja en `process.resourcesPath/proxy/mapping.tsv` (= `resources/proxy/mapping.tsv` en el árbol del `.exe`), que es accesible vía `process.resourcesPath`, NO vía `app.getAppPath()` (que apunta a `resources/app/`). Esto es coherente con la arquitectura de spawn de US-057. La verificación end-to-end (calcular SHA-256 del `mapping.tsv` post-build y comparar con el de raíz) se hará cuando se pueda ejecutar `npm run package:win` en un Windows con Developer Mode; el config actual garantiza que el archivo copiado es bit-exacto al de raíz (electron-builder hace copy simple, sin transformación).
   - **Side effect: `version.ts` ahora importa `app` de `electron`** y bifurca la resolución del `package.json` del proxy: en prod lee `process.resourcesPath/proxy/package.json`, en dev mantiene `../../package.json` desde `mainDir`. Sin este cambio, la versión del proxy mostrada en el sidebar sería `0.0.0` (fallback) en producción.
+- **US-072 (fix post-cierre) — `mapping.tsv` movido a `userData`, NO viaja en el `.exe`**:
+  - **Bug**: la implementación original empacaba `mapping.tsv` dentro del `app.asar.unpacked/proxy/` del instalador redistribuible. Esto es un problema de **distribución**: cada usuario tiene un diccionario distinto (4 líneas confidenciales: `Roberto Claros→Alberto Curli`, etc.), y un `.exe` compartido no debe hardcodear los datos de nadie. Además había un bug latente: `mappings.ts:resolveMappingPath()` apuntaba a `app.asar.unpacked/proxy/mapping.tsv` (read-only en algunas instalaciones), por lo que el editor `/mappings` no podía persistir cambios después de instalado.
+  - **Fix**: nuevo módulo `src/main/proxy-bootstrap.ts` con `ensureUserDataProxy()`:
+    1. Al arrancar (`app.whenReady()` → fire-and-forget), crea `%APPDATA%/Proxy Mapper/proxy/`.
+    2. Copia `index.js` + `package.json` desde `app.asar.unpacked/proxy/` (read-only) al directorio writable de userData. Sobrescribe siempre para mantener sincronía con la versión bundleada.
+    3. Crea `mapping.tsv` VACIO si no existe (clean default — sin pares hardcodeados).
+    4. NO sobrescribe `mapping.tsv` si ya existe (preserva ediciones del usuario).
+    5. Devuelve el path absoluto del directorio (`userData/proxy/`).
+  - **Cambios en callers**:
+    - `proxy.ts:resolveAppRoot()` ahora es `async` y en producción delega a `ensureUserDataProxy()`. `startProxy()` hace `const appRoot = await resolveAppRoot()`. El fork corre desde `userData/proxy/index.js` con `cwd = userData/proxy/`. El proxy (`index.js`) resuelve su propio `__dirname` via `import.meta.url` → apunta a `userData/proxy/` → lee `mapping.tsv` desde ahí. **No se toca `index.js`** (regla AGENTS.md).
+    - `mappings.ts:resolveMappingPath()` en producción retorna `userData/proxy/mapping.tsv`. Mismo path que el proxy lee; editor y fork comparten archivo sin duplicación.
+    - `version.ts` lee `userData/proxy/package.json` para mantener coherencia ("la versión mostrada = la versión corriendo").
+  - **Cambios en build**:
+    - `scripts/copy-proxy.js:18` ahora copia solo `[index.js, package.json]` (sin `mapping.tsv`).
+    - `desktop/proxy/mapping.tsv` borrado del build tree (verificado en `npx asar list`: el asar contiene SOLO `proxy/index.js` y `proxy/package.json` post-fix).
+  - **Verificación end-to-end** del contenido del instalador (post-fix):
+    ```
+    $ npx asar list dist/win-unpacked/resources/app.asar
+    \package.json
+    \proxy\index.js
+    \proxy\package.json
+    \dist\...
+    
+    $ ls dist/win-unpacked/resources/app.asar.unpacked/proxy/
+    index.js   package.json   ← no mapping.tsv aquí tampoco
+    ```
+  - **Trade-offs aceptados**:
+    - **Costo del bootstrap en arranque**: ~70 KB IO por lanzamiento (copia `index.js` + `package.json`). Despreciable (<10 ms en hardware modesto). Documentado en JSDoc de `ensureUserDataProxy`.
+    - **Conflicto con AGENTS.md** "¿o `mapping.tsv` desde `app.getAppPath()/resources/mapping.tsv`?": la regla original no contemplaba el caso per-user. La interpretación actual (`userData/proxy/mapping.tsv`) es más segura (writable, per-user) y consistente con la práctica estándar Electron. Si más adelante se quiere respetar literalmente AGENTS.md, mover el bootstrap a `app.getPath('userData')/mapping.tsv` (sin subdir `proxy/`) y pasar el path absoluto como argv al fork — requiere modificar `index.js`, fuera de scope de este fix.
+    - **`index.js` sigue siendo del usuario**: lo que está en el `.exe` es la versión actual del proxy que el dev subió al repo. Cuando el dev hace cambios al `index.js` raíz, sólo necesita rebuild y redistribuir el instalador. Cada usuario instalado recibe un `index.js` "viejo" hasta que actualice el wrapper.
 - **US-073 — icono + manifest de Windows**:
   - AC #1 ya estaba cubierto por el `yml` original (`win.icon: resources/icon.ico`). El archivo `desktop/resources/icon.ico` existe en el repo desde antes (lo crea el setup inicial del wrapper).
   - **AC #2 (manifest con `requestedExecutionLevel: asInvoker`)**: agregado bajo `win:`. electron-builder genera un `app.exe.manifest` embebido en el `.exe` con `requestedExecutionLevel="asInvoker"`. Esto significa que la app corre con el token del usuario actual sin generar prompt UAC — coherente con `nsis.perMachine: false` (instalación por usuario, no por máquina).
